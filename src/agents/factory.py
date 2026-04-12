@@ -20,7 +20,9 @@ class AgentFactory:
     @staticmethod
     def create_agent(agent_type, solver_type, **kwargs):
 
-        try:
-            return AGENT_TYPES[agent_type][solver_type](**kwargs)
-        except KeyError:
-            raise ValueError(f"Invalid agent type '{agent_type}' or solver type '{solver_type}'.")
+        if agent_type not in AGENT_TYPES:
+            raise ValueError(f"Unknown agent type: {agent_type}")
+        if solver_type not in AGENT_TYPES[agent_type]:
+            raise ValueError(f"Unknown solver type: {solver_type} for agent type: {agent_type}")
+
+        return AGENT_TYPES[agent_type][solver_type](**kwargs)

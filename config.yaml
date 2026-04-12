@@ -1,0 +1,11 @@
+pursuer:
+  speed: 1.0
+  strategy: "greedy"
+  sensing_range: 5.0
+evader:
+  speed: 0.8
+  strategy: "random"
+  starting_position: [0, 0, 0]
+simulation:
+  time_steps: 20
+  grid_size: [10, 10, 3]

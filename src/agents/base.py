@@ -1,4 +1,3 @@
-import numpy as np
 from src.data_types.postion import Position
 
 class Agent:

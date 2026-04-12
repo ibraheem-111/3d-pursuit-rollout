@@ -1,6 +1,19 @@
 import numpy as np
 from src.data_types.postion import Position
 
+
+CARDINAL_MOVES = np.array(
+    [
+        [1, 0, 0],
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, -1, 0],
+        [0, 0, 1],
+        [0, 0, -1],
+    ],
+    dtype=int,
+)
+
 class Grid3D:
     def __init__(self, width, height, depth):
         self.width = width
@@ -13,6 +26,37 @@ class Grid3D:
 
     def is_occupied(self, position: Position):
         return self.grid[position.x, position.y, position.z] != 0
+
+    def get_valid_moves_array(self, position: Position):
+        current = np.array([position.x, position.y, position.z], dtype=int)
+        candidate_positions = current + CARDINAL_MOVES
+
+        in_bounds_mask = (
+            (candidate_positions[:, 0] >= 0)
+            & (candidate_positions[:, 0] < self.width)
+            & (candidate_positions[:, 1] >= 0)
+            & (candidate_positions[:, 1] < self.height)
+            & (candidate_positions[:, 2] >= 0)
+            & (candidate_positions[:, 2] < self.depth)
+        )
+
+        bounded_candidates = candidate_positions[in_bounds_mask]
+        if bounded_candidates.size == 0:
+            return np.empty((0, 3), dtype=int)
+
+        occupancy = self.grid[
+            bounded_candidates[:, 0],
+            bounded_candidates[:, 1],
+            bounded_candidates[:, 2],
+        ]
+        return bounded_candidates[occupancy == 0]
+
+    def get_valid_moves(self, position: Position):
+        valid_moves_array = self.get_valid_moves_array(position)
+        return [
+            Position(x=int(x), y=int(y), z=int(z))
+            for x, y, z in valid_moves_array
+        ]
     
     def place_agent(self, position: Position, agent_id: int):
         if self.is_within_bounds(position) and not self.is_occupied(position):
