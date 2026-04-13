@@ -53,13 +53,15 @@ def run_simulation(grid, args, config):
     if not evader_placed:
         raise RuntimeError("failed to place evader at the start position")
 
-    pursuers_placed = [grid.place_agent(p.position, agent_id=p.agent_id) for p in pursuers]
-    if not all(pursuers_placed):
+    if not all(grid.place_agent(p.position, agent_id=p.agent_id) for p in pursuers):
         raise RuntimeError("failed to place one or more pursuers at their starting positions")
 
     snapshots = [grid.grid.copy()]
-    positions = [evader.position]
-    
+    positions = [{
+        "evader": evader.position,
+        "pursuers": [p.position for p in pursuers]
+    }]
+
     capture_occurred = False
 
     time_steps = 0
@@ -73,6 +75,7 @@ def run_simulation(grid, args, config):
         if moved:
             evader.move(next_evader_position)
         
+        pursuer_positions = []        
         for pursuer in pursuers:
             next_pursuer_position = pursuer.choose_action(grid, target_position=evader.position)
 
@@ -81,7 +84,14 @@ def run_simulation(grid, args, config):
                 pursuer.move(next_pursuer_position)
 
         snapshots.append(grid.grid.copy())
-        positions.append(evader.position)
+        positions.append({
+            "evader": evader.position,
+            "pursuers": [p.position for p in pursuers]
+        })
+
+        logger.debug(f"Time step {time_steps}: Evader at {evader.position} \n Pursuers at ")
+        for p in pursuers:
+            logger.debug(f"  {p.name} at {p.position}")
 
         capture_occurred = any(p.position == evader.position for p in pursuers)
         time_steps += 1

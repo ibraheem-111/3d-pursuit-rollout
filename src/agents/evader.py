@@ -10,7 +10,7 @@ class RandomWalkEvaderAgent(Agent):
         if rng is None:
             rng = np.random.default_rng(0)
 
-        valid_moves = grid.get_valid_moves_array(self.position)
+        valid_moves = grid.get_valid_moves_array(self.position, self.agent_id)
         if valid_moves.shape[0] == 0:
             return self.position
 
@@ -28,7 +28,7 @@ class EvasiveEvaderAgent(Agent):
         closest_pursuer_idx = np.argmin(distances)
         closest_pursuer = pursuers[closest_pursuer_idx]
 
-        valid_moves = grid.get_valid_moves_array(self.position)
+        valid_moves = grid.get_valid_moves_array(self.position, self.agent_id)
 
         target_distances = distance_matrix([closest_pursuer.position], valid_moves)
         best_move_idx = np.argmax(target_distances)

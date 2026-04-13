@@ -10,7 +10,7 @@ class GreedyAgent(Agent):
 
     def choose_action(self, grid, target_position: Position):
         """ Chooses the move that minimizes the L2 distance to the target. """
-        valid_moves = grid.get_valid_moves_array(self.position)
+        valid_moves = grid.get_valid_moves_array(self.position, self.agent_id)
         if valid_moves.shape[0] == 0:
             return self.position
 

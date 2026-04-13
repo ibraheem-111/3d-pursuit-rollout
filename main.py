@@ -95,7 +95,7 @@ def main():
             export_result["gif_path"],
         )
 
-    logger.info(f"Simulation complete. Final evader position: {result['positions'][-1].as_tuple()}")
+    logger.info(f"Simulation complete. Final evader position: {result['positions'][-1]['evader'].as_tuple()}")
 
 if __name__ == "__main__":
     main()

@@ -12,5 +12,5 @@ evader:
   strategy: "random"
   starting_position: [0, 0, 0]
 simulation:
-  time_steps: 20
+  time_steps: 10000
   grid_size: [10, 10, 1]
