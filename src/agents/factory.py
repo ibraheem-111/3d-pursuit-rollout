@@ -18,11 +18,11 @@ AGENT_TYPES = {
 
 class AgentFactory:
     @staticmethod
-    def create_agent(agent_type, solver_type, **kwargs):
+    def create_agent(agent_type, strategy, **kwargs):
 
         if agent_type not in AGENT_TYPES:
             raise ValueError(f"Unknown agent type: {agent_type}")
-        if solver_type not in AGENT_TYPES[agent_type]:
-            raise ValueError(f"Unknown solver type: {solver_type} for agent type: {agent_type}")
+        if strategy not in AGENT_TYPES[agent_type]:
+            raise ValueError(f"Unknown strategy: {strategy} for agent type: {agent_type}")
 
-        return AGENT_TYPES[agent_type][solver_type](**kwargs)
+        return AGENT_TYPES[agent_type][strategy](**kwargs)

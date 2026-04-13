@@ -80,6 +80,8 @@ def main():
 
     result = run_simulation(grid, args, config=config)
 
+    logger.info(f"Simulation finished after {result['time_steps']} time steps. Capture occurred: {result['capture_occurred']}")
+
     if args.save_snapshots:
         export_result = save_snapshots_and_gif(
             snapshots=result["snapshots"],

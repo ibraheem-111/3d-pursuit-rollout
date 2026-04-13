@@ -1,9 +1,10 @@
 from src.agents.base import Agent
 import numpy as np
+from src.utils.math_utils import distance_matrix
 
 class RandomWalkEvaderAgent(Agent):
-    def __init__(self, name, position):
-        super().__init__(name, position)
+    def __init__(self, name, position, agent_id):
+        super().__init__(name, position, agent_id)
 
     def choose_action(self, grid, rng=None):
         if rng is None:
@@ -18,15 +19,20 @@ class RandomWalkEvaderAgent(Agent):
         return type(self.position)(x=int(move[0]), y=int(move[1]), z=int(move[2]))
 
 class EvasiveEvaderAgent(Agent):
-    def __init__(self, name, position):
-        super().__init__(name, position)
+    def __init__(self, name, position, agent_id):
+        super().__init__(name, position, agent_id)
 
     def choose_action(self, grid, pursuers):
         """ Moves away from the closest pursuer. """
-        pass
+        distances = distance_matrix([p.position for p in pursuers], [self.position])
+        closest_pursuer_idx = np.argmin(distances)
+        closest_pursuer = pursuers[closest_pursuer_idx]
 
-    def _find_closest_pursuer(self, pursuers):
-        """ Helper method to find the closest pursuer. """
-        l2_distances = [pursuer.position.l2_distance(self.position) for pursuer in pursuers]
-        closest_index = l2_distances.index(min(l2_distances))
-        return pursuers[closest_index]
+        valid_moves = grid.get_valid_moves_array(self.position)
+
+        target_distances = distance_matrix([closest_pursuer.position], valid_moves)
+        best_move_idx = np.argmax(target_distances)
+        best_move = valid_moves[best_move_idx]
+        return type(self.position)(x=int(best_move[0]), y=int(best_move[1]), z=int(best_move[2]))
+
+    
