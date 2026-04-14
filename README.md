@@ -1,5 +1,14 @@
 # Can Learned Signaling Approximate Multi-Agent Rollout in 3D fully observable rollout
 
+# Project Setup
+
+Install UV
+and do ``` uv sync ```
+
+then ``` uv run main.py ```
+
+# Dir structure
+
 Inventory Refreshed: 2026-04-12T15:57:49-0700
 Git Baseline: 33b3741 (2026-04-12T03:52:04-07:00)
 

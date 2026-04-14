@@ -88,7 +88,7 @@ def main():
 
     plot_heatmap = args.plot_all or args.plot_heatmap
     plot_3d_trajectory = args.plot_all or args.plot_3d_trajectory
-    save_gif = args.save_gif or args.plot_all
+    plot_gif = args.save_gif or args.plot_all
 
     visualization_config = config["visualization"]
     evader_color = visualization_config["evader_color"]
@@ -117,7 +117,7 @@ def main():
         plt.close(fig)
         logger.info("Saved 3D trajectory plot to %s", trajectory_path)
 
-    if save_gif:
+    if plot_gif:
         export_result = save_gif(
             positions_history=result["positions"],
             grid_size=result["grid_size"],
