@@ -5,6 +5,7 @@ from src.data_types import Position, GameState
 
 CARDINAL_MOVES = np.array(
     [
+        [0, 0, 0],
         [1, 0, 0],
         [-1, 0, 0],
         [0, 1, 0],

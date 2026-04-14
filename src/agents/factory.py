@@ -31,8 +31,6 @@ class AgentFactory:
         if strategy not in AGENT_TYPES[agent_type]:
             raise ValueError(f"Unknown strategy: {strategy} for agent type: {agent_type}")
 
-        role = AGENT_ROLES.get(agent_type)
-
-        kwargs["role"] = role
+        kwargs["role"] = AGENT_ROLES.get(agent_type)
 
         return AGENT_TYPES[agent_type][strategy](**kwargs)

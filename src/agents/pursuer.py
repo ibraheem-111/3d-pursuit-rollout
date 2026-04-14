@@ -20,3 +20,19 @@ class GreedyAgent(Agent):
         best_move_idx = np.argmin(target_distances)
         best_move = valid_moves[best_move_idx]
         return type(self.position)(x=int(best_move[0]), y=int(best_move[1]), z=int(best_move[2]))
+            
+    def choose_action_from_state(self, current_position, target_position, grid_model, pursuer_positions):
+        valid_moves = grid_model.get_valid_moves(
+            position=current_position,
+            agent_id=self.agent_id,
+            occupied_positions=pursuer_positions,
+            evader_position=target_position,
+        )
+        if len(valid_moves) == 0:
+            return current_position
+
+        valid_moves_array = np.array([p.as_tuple() for p in valid_moves], dtype=int)
+        target_distances = distance_matrix([np.array(target_position.as_tuple())], valid_moves_array)
+        best_move_idx = np.argmin(target_distances)
+        best_move = valid_moves_array[best_move_idx]
+        return Position(x=int(best_move[0]), y=int(best_move[1]), z=int(best_move[2]))

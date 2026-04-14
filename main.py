@@ -45,6 +45,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run the grid application.")
     parser.add_argument("--config", type=str, help="Path to the configuration file.")
 
+    parser.add_argument("--planner", action="store_true")
+
     parser.add_argument("--pursuer-type", type=str, help="Optional pursuer strategy override.")
     parser.add_argument("--evader-type", type=str, help="Type of the evader.",
                         default=None)
@@ -79,7 +81,7 @@ def main():
     logger.info(f"Run output directory: {run_dir}")
     logger.info(f"Saved run config to: {saved_config_path}")
 
-    result = run_simulation(grid, args, config=config)
+    result = run_simulation(grid, args, config=config, planner = args.planner)
 
     logger.info(f"Simulation finished after {result['time_steps']} time steps. Capture occurred: {result['capture_occurred']}")
 

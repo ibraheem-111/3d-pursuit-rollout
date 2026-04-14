@@ -1,14 +1,18 @@
 import logging
 import numpy as np
-
 from src.agents.factory import AgentFactory
 from src.data_types.postion import Position
 from src.utils.math_utils import find_closest_agent
+from src.simulation.planner import planner_run_simulation
 
 logger = logging.getLogger(__name__)
 
-def run_simulation(grid, args, config):
+def run_simulation(grid, args, config, planner):
     logger.info("Starting simulation")
+
+    if planner:
+        return planner_run_simulation(grid, args, config)
+
     max_time_steps = config["simulation"]["time_steps"]
 
     evader_configs = config["evaders"]
@@ -135,3 +139,4 @@ def run_simulation(grid, args, config):
         "capture_occurred": capture_occurred,
         "remaining_evaders": len(active_evaders),
     }
+

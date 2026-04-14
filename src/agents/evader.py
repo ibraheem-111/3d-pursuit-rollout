@@ -19,6 +19,22 @@ class RandomWalkEvaderAgent(Agent):
         move_idx = int(rng.integers(0, valid_moves.shape[0]))
         move = valid_moves[move_idx]
         return Position(x=int(move[0]), y=int(move[1]), z=int(move[2]))
+    
+    def choose_action_from_state(self, current_position, grid_model, pursuer_positions, rng=None):
+        if rng is None:
+            rng = np.random.default_rng(0)
+
+        valid_moves = grid_model.get_valid_moves(
+            position=current_position,
+            agent_id=self.agent_id,
+            occupied_positions=pursuer_positions,
+            evader_position=current_position,
+        )
+        if len(valid_moves) == 0:
+            return current_position
+
+        move_idx = int(rng.integers(0, len(valid_moves)))
+        return valid_moves[move_idx]
 
 class EvasiveEvaderAgent(Agent):
     def __init__(self, name, position, agent_id, role):

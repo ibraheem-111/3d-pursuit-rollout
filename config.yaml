@@ -1,16 +1,32 @@
+# evaders:
+#   - strategy: "random"
+#     starting_position: [0, 0, 0]
+# pursuers:
+#   - strategy: "greedy"
+#     starting_position: [9, 9, 2]
+#   - strategy: "greedy"
+#     starting_position: [9, 0, 2]
+#   - strategy: "greedy"
+#     starting_position: [0, 9, 2]
+# simulation:
+#   time_steps: 50
+#   grid_size: [10, 10, 3]
+# visualization:
+#   evader_color: "red"
+#   pursuer_color: "tab:blue"
 evaders:
   - strategy: "random"
     starting_position: [0, 0, 0]
 pursuers:
   - strategy: "greedy"
-    starting_position: [9, 9, 2]
+    starting_position: [9, 9, 0]
   - strategy: "greedy"
-    starting_position: [9, 0, 2]
+    starting_position: [9, 0, 0]
   - strategy: "greedy"
-    starting_position: [0, 9, 2]
+    starting_position: [0, 9, 0]
 simulation:
   time_steps: 50
-  grid_size: [10, 10, 3]
+  grid_size: [10, 10, 1]
 visualization:
   evader_color: "red"
   pursuer_color: "tab:blue"
