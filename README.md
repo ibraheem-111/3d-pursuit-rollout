@@ -3,6 +3,7 @@
 # Todo
 Fix creating gif leads to out of memory
 Make the planner work with multiple agents 
+Integrate the planner based simulation with the visualization code
 
 # Project Setup
 
