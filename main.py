@@ -88,24 +88,11 @@ def main():
 
     plot_heatmap = args.plot_all or args.plot_heatmap
     plot_3d_trajectory = args.plot_all or args.plot_3d_trajectory
+    save_gif = args.save_gif or args.plot_all
 
     visualization_config = config["visualization"]
     evader_color = visualization_config["evader_color"]
     pursuer_color = visualization_config.get("pursuer_color", "tab:blue")
-
-    if args.save_gif:
-        export_result = save_gif(
-            positions_history=result["positions"],
-            grid_size=result["grid_size"],
-            gif_path=str(run_dir / "simulation.gif"),
-            max_tiles=6,
-            evader_color=evader_color,
-            pursuer_color=pursuer_color,
-        )
-        logger.info(
-            "Saved GIF to %s",
-            export_result["gif_path"],
-        )
 
     if plot_heatmap:
         fig, _ = plot_visit_heatmaps(
@@ -129,6 +116,20 @@ def main():
         fig.savefig(trajectory_path, dpi=140)
         plt.close(fig)
         logger.info("Saved 3D trajectory plot to %s", trajectory_path)
+
+    if save_gif:
+        export_result = save_gif(
+            positions_history=result["positions"],
+            grid_size=result["grid_size"],
+            gif_path=str(run_dir / "simulation.gif"),
+            max_tiles=6,
+            evader_color=evader_color,
+            pursuer_color=pursuer_color,
+        )
+        logger.info(
+            "Saved GIF to %s",
+            export_result["gif_path"],
+        )
 
     final_state = result["positions"][-1]
     final_evaders = final_state["evaders"]
