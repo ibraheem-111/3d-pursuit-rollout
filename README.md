@@ -1,11 +1,14 @@
 # Can Learned Signaling Approximate Multi-Agent Rollout in 3D fully observable rollout
 
+# Todo
+Fix creating gif leads to out of memory
+
 # Project Setup
 
 Install UV
 and do ``` uv sync ```
 
-then ``` uv run main.py ```
+then ``` uv run main.py --config config.yaml ```
 
 # Dir structure
 

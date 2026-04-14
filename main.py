@@ -43,16 +43,13 @@ def grid_array(string):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the grid application.")
-    parser.add_argument("--config", type=str, help="Path to the configuration file.", default="./config.yaml")
+    parser.add_argument("--config", type=str, help="Path to the configuration file.")
 
     parser.add_argument("--pursuer-type", type=str, help="Optional pursuer strategy override.")
     parser.add_argument("--evader-type", type=str, help="Type of the evader.",
                         default=None)
     parser.add_argument("--num-steps", type=int, default=20, help="Number of simulation steps.")
     parser.add_argument("--seed", type=int, default=None, help="Optional random seed for reproducible movement.")
-
-    parser.add_argument("--grid-size", type=grid_array, help="Size of the grid. Format: " \
-    "[ width, height, depth ]", default=[10, 10, 3])
 
     parser.add_argument("--save-gif", action="store_true", help="Whether to save a GIF of the rollout.")
     parser.add_argument("--plot-heatmap", action="store_true", help="Whether to save pursuer visit heatmaps.")
@@ -73,9 +70,9 @@ def main():
     args, config = load_args_and_config()
     run_dir = create_run_output_dir()
 
-    grid_size = args.grid_size
+    grid_size = config["simulation"]["grid_size"]
     width, height, depth = grid_size
-    logger.info(f"Using grid size from command line: {grid_size}")
+    logger.info(f"Using grid size from config: {grid_size}")
     grid = Grid3D(width, height, depth)
 
     saved_config_path = save_run_config(run_dir=run_dir, config_path=args.config)

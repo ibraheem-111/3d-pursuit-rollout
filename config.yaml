@@ -9,8 +9,8 @@ pursuers:
   - strategy: "greedy"
     starting_position: [0, 9, 2]
 simulation:
-  time_steps: 1000
-  grid_size: [10, 10, 1]
+  time_steps: 50
+  grid_size: [10, 10, 3]
 visualization:
   evader_color: "red"
   pursuer_color: "tab:blue"
