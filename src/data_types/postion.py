@@ -1,10 +1,10 @@
 import math
-from pydantic import BaseModel
 from typing import Any
 import numpy as np
+from dataclasses import dataclass
 
-
-class Position(BaseModel):
+@dataclass
+class Position:
     x: int
     y: int
     z: int

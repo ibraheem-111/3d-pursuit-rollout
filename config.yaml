@@ -1,16 +1,16 @@
-pursuer:
-  num_pursuers: 3
-  speed: 1.0
-  strategy: "greedy"
-  sensing_range: 5.0
-  starting_positions:
-    - [9, 9, 2]
-    - [9, 0, 2]
-    - [0, 9, 2]
-evader:
-  speed: 0.8
-  strategy: "random"
-  starting_position: [0, 0, 0]
+evaders:
+  - strategy: "random"
+    starting_position: [0, 0, 0]
+pursuers:
+  - strategy: "greedy"
+    starting_position: [9, 9, 2]
+  - strategy: "greedy"
+    starting_position: [9, 0, 2]
+  - strategy: "greedy"
+    starting_position: [0, 9, 2]
 simulation:
-  time_steps: 10000
+  time_steps: 1000
   grid_size: [10, 10, 1]
+visualization:
+  evader_color: "red"
+  pursuer_color: "tab:blue"

@@ -3,100 +3,129 @@ import numpy as np
 
 from src.agents.factory import AgentFactory
 from src.data_types.postion import Position
+from src.utils.math_utils import find_closest_agent
 
 logger = logging.getLogger(__name__)
 
-
 def run_simulation(grid, args, config):
     logger.info("Starting simulation")
-    simulation_config = config["simulation"]
-    evader_config = config["evader"]
-    pursuer_config = config["pursuer"]
-    num_pursuers = pursuer_config["num_pursuers"]
-    pursuer_starting_positions = pursuer_config["starting_positions"]
+    max_time_steps = config["simulation"]["time_steps"]
 
+    evader_configs = config["evaders"]
+    if len(evader_configs) == 0:
+        raise RuntimeError("config['evaders'] must contain at least one evader")
 
-    evader_type = args.evader_type
-    max_time_steps = simulation_config["time_steps"]
+    pursuer_configs = config["pursuers"]
+
+    evader_strategy_override = args.evader_type
+    pursuer_strategy_override = args.pursuer_type
+
     seed = args.seed
-
     if seed is not None:
         seed = int(seed)
-
-    start_xyz = evader_config["starting_position"]
-
-    start_position = Position(
-        x=int(start_xyz[0]),
-        y=int(start_xyz[1]),
-        z=int(start_xyz[2]),
-    )
-
     rng = np.random.default_rng(seed)
 
-    evader = AgentFactory.create_agent(
-        agent_type="evader",
-        strategy=evader_type,
-        name="evader",
-        agent_id=1,
-        position=start_position,
-    )
+    evaders = [
+        AgentFactory.create_agent(
+            agent_type="evader",
+            strategy=evader_strategy_override if evader_strategy_override is not None else evader_config["strategy"],
+            name=f"evader_{idx}",
+            agent_id=idx + 1,
+            position=Position(
+                x=int(evader_config["starting_position"][0]),
+                y=int(evader_config["starting_position"][1]),
+                z=int(evader_config["starting_position"][2]),
+            ),
+        )
+        for idx, evader_config in enumerate(evader_configs)
+    ]
 
-    pursuers = [AgentFactory.create_agent(
-        agent_type="pursuer",
-        strategy=pursuer_config["strategy"],
-        name=f"pursuer_{i}",
-        agent_id=i+2,
-        position=Position(x=int(pursuer_starting_positions[i][0]), y=int(pursuer_starting_positions[i][1]), z=int(pursuer_starting_positions[i][2])), 
-    ) for i in range(num_pursuers)]
+    pursuers = [
+        AgentFactory.create_agent(
+            agent_type="pursuer",
+            strategy=pursuer_strategy_override if pursuer_strategy_override is not None else pursuer_config["strategy"],
+            name=f"pursuer_{idx}",
+            agent_id=len(evaders) + idx + 1,
+            position=Position(
+                x=int(pursuer_config["starting_position"][0]),
+                y=int(pursuer_config["starting_position"][1]),
+                z=int(pursuer_config["starting_position"][2]),
+            ),
+        )
+        for idx, pursuer_config in enumerate(pursuer_configs)
+    ]
 
-    evader_placed = grid.place_agent(evader.position, agent_id=1)
-    if not evader_placed:
-        raise RuntimeError("failed to place evader at the start position")
+    for agent in evaders + pursuers:
+        placed = grid.place_agent(agent.position, agent_id=agent.agent_id, role=agent.role)
+        if placed:
+            continue
+        raise RuntimeError(f"failed to place {agent.name} at the start position")
 
-    if not all(grid.place_agent(p.position, agent_id=p.agent_id) for p in pursuers):
-        raise RuntimeError("failed to place one or more pursuers at their starting positions")
+    active_evaders = list(evaders)
 
     snapshots = [grid.grid.copy()]
     positions = [{
-        "evader": evader.position,
-        "pursuers": [p.position for p in pursuers]
+        "evaders": [evader.position for evader in active_evaders],
+        "pursuers": [pursuer.position for pursuer in pursuers],
     }]
 
-    capture_occurred = False
-
     time_steps = 0
+    while len(active_evaders) > 0 and time_steps < max_time_steps:
 
-    # Main simulation loop
-    while not capture_occurred and time_steps < max_time_steps:
-
-        next_evader_position = evader.choose_action(grid, rng=rng)
-
-        moved = grid.move_agent(evader.position, next_evader_position, agent_id=1)
-        if moved:
+        for evader in active_evaders:
+            next_evader_position = evader.choose_action(
+                grid,
+                rng=rng,
+                pursuers=pursuers,
+                evaders=active_evaders,
+            )
+            moved = grid.move_agent(evader.position, next_evader_position, agent_id=evader.agent_id)
+            if not moved:
+                continue
             evader.move(next_evader_position)
-        
-        pursuer_positions = []        
-        for pursuer in pursuers:
-            next_pursuer_position = pursuer.choose_action(grid, target_position=evader.position)
 
+        for pursuer in pursuers:
+            if len(active_evaders) == 0:
+                break
+            target_evader = find_closest_agent(pursuer.position, active_evaders)
+            next_pursuer_position = pursuer.choose_action(
+                grid,
+                target_position=target_evader.position,
+                rng=rng,
+                pursuers=pursuers,
+                evaders=active_evaders,
+            )
             moved = grid.move_agent(pursuer.position, next_pursuer_position, agent_id=pursuer.agent_id)
-            if moved:
-                pursuer.move(next_pursuer_position)
+            if not moved:
+                continue
+            pursuer.move(next_pursuer_position)
+
+        captured_evader_ids = {
+            evader.agent_id
+            for evader in active_evaders
+            if any(pursuer.position == evader.position for pursuer in pursuers)
+        }
+        if len(captured_evader_ids) > 0:
+            active_evaders = [
+                evader for evader in active_evaders
+                if evader.agent_id not in captured_evader_ids
+            ]
 
         snapshots.append(grid.grid.copy())
         positions.append({
-            "evader": evader.position,
-            "pursuers": [p.position for p in pursuers]
+            "evaders": [evader.position for evader in active_evaders],
+            "pursuers": [pursuer.position for pursuer in pursuers],
         })
 
-        logger.debug(f"Time step {time_steps}: Evader at {evader.position} \n Pursuers at ")
-        for p in pursuers:
-            logger.debug(f"  {p.name} at {p.position}")
+        logger.debug("Time step %d: Active evaders: %d", time_steps, len(active_evaders))
+        for evader in active_evaders:
+            logger.debug("  %s at %s", evader.name, evader.position)
+        for pursuer in pursuers:
+            logger.debug("  %s at %s", pursuer.name, pursuer.position)
 
-        capture_occurred = any(p.position == evader.position for p in pursuers)
         time_steps += 1
 
-
+    capture_occurred = len(active_evaders) == 0
 
     return {
         "snapshots": snapshots,
@@ -104,4 +133,5 @@ def run_simulation(grid, args, config):
         "grid_size": [grid.width, grid.height, grid.depth],
         "time_steps": time_steps,
         "capture_occurred": capture_occurred,
+        "remaining_evaders": len(active_evaders),
     }

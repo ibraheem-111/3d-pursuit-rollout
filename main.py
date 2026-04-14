@@ -1,6 +1,7 @@
 from src.grid import Grid3D
 from src.simulation.simulation import run_simulation
-from src.visualization import save_snapshots_and_gif
+from src.visualization import plot_3d_trajectories, plot_visit_heatmaps, save_gif
+import matplotlib.pyplot as plt
 import logging
 import argparse
 import ast
@@ -44,16 +45,19 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run the grid application.")
     parser.add_argument("--config", type=str, help="Path to the configuration file.", default="./config.yaml")
 
-    parser.add_argument("--pursuer-type", type=str, help="Type of the pursuer.")
+    parser.add_argument("--pursuer-type", type=str, help="Optional pursuer strategy override.")
     parser.add_argument("--evader-type", type=str, help="Type of the evader.",
-                        default="random")
+                        default=None)
     parser.add_argument("--num-steps", type=int, default=20, help="Number of simulation steps.")
     parser.add_argument("--seed", type=int, default=None, help="Optional random seed for reproducible movement.")
 
     parser.add_argument("--grid-size", type=grid_array, help="Size of the grid. Format: " \
     "[ width, height, depth ]", default=[10, 10, 3])
 
-    parser.add_argument("--save-snapshots", action="store_true", help="Whether to save snapshots of the grid at each timestep.")
+    parser.add_argument("--save-gif", action="store_true", help="Whether to save a GIF of the rollout.")
+    parser.add_argument("--plot-heatmap", action="store_true", help="Whether to save pursuer visit heatmaps.")
+    parser.add_argument("--plot-3d-trajectory", action="store_true", help="Whether to save 3D trajectories.")
+    parser.add_argument("--plot-all", action="store_true", help="Whether to save all plot outputs.")
         
     return parser.parse_args()
 
@@ -82,20 +86,63 @@ def main():
 
     logger.info(f"Simulation finished after {result['time_steps']} time steps. Capture occurred: {result['capture_occurred']}")
 
-    if args.save_snapshots:
-        export_result = save_snapshots_and_gif(
-            snapshots=result["snapshots"],
-            snapshot_dir=str(run_dir / "snapshots"),
-            gif_path=str(run_dir / "snapshots.gif"),
+    plot_heatmap = args.plot_all or args.plot_heatmap
+    plot_3d_trajectory = args.plot_all or args.plot_3d_trajectory
+
+    visualization_config = config["visualization"]
+    evader_color = visualization_config["evader_color"]
+    pursuer_color = visualization_config.get("pursuer_color", "tab:blue")
+
+    if args.save_gif:
+        export_result = save_gif(
+            positions_history=result["positions"],
+            grid_size=result["grid_size"],
+            gif_path=str(run_dir / "simulation.gif"),
             max_tiles=6,
+            evader_color=evader_color,
+            pursuer_color=pursuer_color,
         )
         logger.info(
-            "Saved snapshot frames to %s and GIF to %s",
-            export_result["snapshot_dir"],
+            "Saved GIF to %s",
             export_result["gif_path"],
         )
 
-    logger.info(f"Simulation complete. Final evader position: {result['positions'][-1]['evader'].as_tuple()}")
+    if plot_heatmap:
+        fig, _ = plot_visit_heatmaps(
+            positions_history=result["positions"],
+            grid_size=result["grid_size"],
+            show=False,
+        )
+        heatmap_path = run_dir / "visit_heatmap.png"
+        fig.savefig(heatmap_path, dpi=140)
+        plt.close(fig)
+        logger.info("Saved visit heatmap to %s", heatmap_path)
+
+    if plot_3d_trajectory:
+        fig, _ = plot_3d_trajectories(
+            positions_history=result["positions"],
+            show=False,
+            evader_color=evader_color,
+            pursuer_color=pursuer_color,
+        )
+        trajectory_path = run_dir / "trajectory_3d.png"
+        fig.savefig(trajectory_path, dpi=140)
+        plt.close(fig)
+        logger.info("Saved 3D trajectory plot to %s", trajectory_path)
+
+    final_state = result["positions"][-1]
+    final_evaders = final_state["evaders"]
+
+    if len(final_evaders) == 0:
+        logger.info("Simulation complete. All evaders captured.")
+    elif len(final_evaders) == 1:
+        logger.info("Simulation complete. Final evader position: %s", final_evaders[0].as_tuple())
+    else:
+        logger.info(
+            "Simulation complete. Remaining evaders: %d. Positions: %s",
+            len(final_evaders),
+            [position.as_tuple() for position in final_evaders],
+        )
 
 if __name__ == "__main__":
     main()
