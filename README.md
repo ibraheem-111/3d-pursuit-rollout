@@ -2,6 +2,7 @@
 
 # Todo
 Fix creating gif leads to out of memory
+Make the planner work with multiple agents 
 
 # Project Setup
 
