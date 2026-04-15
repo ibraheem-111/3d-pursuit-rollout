@@ -44,8 +44,8 @@ $$
 Transition and discounted objective:
 
 $$
-x_{k+1}=f(x_k,u_k,w_k), \quad
-J^*(x)=\min_u \mathbb{E}[g(x,u)+\alpha J^*(f(x,u,w))]
+x_{k+1} = f(x_k, u_k, w_k), \quad
+J^{*}(x) = \min_{u} \mathbb{E}\left[g(x, u) + \alpha J^{*}(f(x, u, w))\right]
 $$
 
 Stage cost in proposal:
