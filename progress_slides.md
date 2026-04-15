@@ -193,25 +193,39 @@ Interpretation:
 
 ---
 
-# 11) Visual Evidence from Latest Planner Run
+# 11) Visual Evidence (Baseline vs Planner)
 
-Run directory:
+Baseline run directory:
 
-- outputs/04_14_2026_19_34_31
+- outputs/04_14_2026_19_55_14
 
-Artifacts:
+Planner run directory:
 
-- simulation.gif
-- visit_heatmap.png
-- trajectory_3d.png
+- outputs/04_14_2026_19_55_18
 
-Trajectory:
+Baseline GIF:
 
-![Planner 3D Trajectory](outputs/04_14_2026_19_34_31/trajectory_3d.png)
+![Baseline Simulation GIF](outputs/04_14_2026_19_55_14/simulation.gif)
 
-Heatmap:
+Planner GIF:
 
-![Planner Visit Heatmap](outputs/04_14_2026_19_34_31/visit_heatmap.png)
+![Planner Simulation GIF](outputs/04_14_2026_19_55_18/simulation.gif)
+
+Baseline trajectory:
+
+![Baseline 3D Trajectory](outputs/04_14_2026_19_55_14/trajectory_3d.png)
+
+Planner trajectory:
+
+![Planner 3D Trajectory](outputs/04_14_2026_19_55_18/trajectory_3d.png)
+
+Baseline visit heatmap:
+
+![Baseline Visit Heatmap](outputs/04_14_2026_19_55_14/visit_heatmap.png)
+
+Planner visit heatmap:
+
+![Planner Visit Heatmap](outputs/04_14_2026_19_55_18/visit_heatmap.png)
 
 ---
 
