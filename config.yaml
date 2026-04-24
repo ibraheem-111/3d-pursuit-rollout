@@ -27,6 +27,8 @@ pursuers:
 simulation:
   time_steps: 50
   grid_size: [10, 10, 1]
+planner:
+  discount_factor: 0.2
 visualization:
   evader_color: "red"
   pursuer_color: "tab:blue"
