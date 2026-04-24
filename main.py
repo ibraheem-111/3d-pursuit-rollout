@@ -46,6 +46,7 @@ def parse_args():
     parser.add_argument("--config", type=str, help="Path to the configuration file.")
 
     parser.add_argument("--planner", action="store_true")
+    parser.add_argument("--horizon", type=int, help="Rollout horizon for planner-based simulation.")
 
     parser.add_argument("--pursuer-type", type=str, help="Optional pursuer strategy override.")
     parser.add_argument("--evader-type", type=str, help="Type of the evader.",

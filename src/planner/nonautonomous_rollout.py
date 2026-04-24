@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 from src.data_types.postion import Position
-from src.planning.state import GameState
+from src.data_types import GameState
 
 
 @dataclass

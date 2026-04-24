@@ -32,8 +32,14 @@ class GridModel:
         next_id = 2
         for p in occupied_positions:
             if p != evader_position:
-                temp_grid.place_agent(p, agent_id=next_id, role=AgentRole.PURSUER)
+                placed = temp_grid.place_agent(p, agent_id=next_id, role=AgentRole.PURSUER)
+                if not placed:
+                    temp_grid.agent_roles_by_id[int(next_id)] = AgentRole.PURSUER
                 next_id += 1
+
+        mover_agent_id = int(agent_id)
+        if mover_agent_id not in temp_grid.agent_roles_by_id:
+            temp_grid.agent_roles_by_id[mover_agent_id] = AgentRole.PURSUER if mover_agent_id != 1 else AgentRole.EVADER
 
         return temp_grid.get_valid_moves(position, agent_id=agent_id)
 

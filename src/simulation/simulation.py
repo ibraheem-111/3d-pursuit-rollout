@@ -7,7 +7,7 @@ from src.simulation.planner import planner_run_simulation
 
 logger = logging.getLogger(__name__)
 
-def run_simulation(grid, args, config, planner):
+def run_simulation(grid, args, config, planner, **kwargs):
     logger.info("Starting simulation")
 
     if planner:
