@@ -9,7 +9,7 @@ class GreedyAgent(Agent):
         super().__init__(name, position, agent_id, role)
 
     def choose_action(self, grid, **kwargs):
-        """ Chooses the move that minimizes the L2 distance to the target. """
+        """ Chooses the move that minimizes the Manhattan distance to the target. """
         target_position: Position = kwargs["target_position"]
         valid_moves = grid.get_valid_moves_array(self.position, self.agent_id)
         if valid_moves.shape[0] == 0:
