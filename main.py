@@ -9,6 +9,7 @@ import yaml
 import shutil
 from datetime import datetime
 from pathlib import Path
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -93,6 +94,15 @@ def main():
     visualization_config = config["visualization"]
     evader_color = visualization_config["evader_color"]
     pursuer_color = visualization_config.get("pursuer_color", "tab:blue")
+
+    # save positions into a dataframe and export as csv
+    positions = result["positions"]
+    positions_path = run_dir / "positions.csv"
+    logger.info(positions[0])
+    logger.info(type(positions[0]))
+    df = pd.DataFrame(positions)
+    df.to_csv(positions_path, index=False)
+    logger.info(f"Saved positions to {positions_path}")
 
     if plot_heatmap:
         fig, _ = plot_visit_heatmaps(

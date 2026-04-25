@@ -1,3 +1,5 @@
 *.pyc  
 outputs/*
 .github/*
+*.txt
+.codex
