@@ -40,7 +40,7 @@ class BasePolicyEvaluator:
             rng = np.random.default_rng(0)
 
         total = 0.0
-        discount = 0.8
+        discount = 1.0
         sim_state = state
 
         if self.rollout_horizon == 0:

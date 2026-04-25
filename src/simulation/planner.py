@@ -1,9 +1,7 @@
 import logging
-
 import numpy as np
-
 from src.agents.factory import AgentFactory
-from src.data_types import GameState
+from src.data_types import GameState, state
 from src.data_types.postion import Position
 from src.planner.base_policy_evaluator import BasePolicyEvaluator
 from src.planner.grid_model import GridModel
@@ -18,28 +16,17 @@ def planner_run_simulation(grid, args, config):
     max_time_steps = config["simulation"]["time_steps"]
 
     evader_configs = config["evaders"]
-    if len(evader_configs) == 0:
-        raise RuntimeError("config['evaders'] must contain at least one evader")
-    if len(evader_configs) != 1:
-        raise RuntimeError("planner mode supports exactly one evader")
-
     pursuer_configs = config["pursuers"]
 
     evader_strategy_override = args.evader_type
     pursuer_strategy_override = args.pursuer_type
 
     seed = args.seed
-    if seed is not None:
-        seed = int(seed)
-    rng = np.random.default_rng(seed)
 
-    rollout_horizon = args.horizon
-    if rollout_horizon is None:
-        rollout_horizon = 8
-    rollout_horizon = int(rollout_horizon)
-    if rollout_horizon < 0:
-        raise RuntimeError("--horizon must be non-negative")
+    planner_rng = np.random.default_rng(seed)
+    evader_rng = np.random.default_rng(seed + 10_000 if seed is not None else None)
 
+    rollout_horizon = int(config["planner"]["rollout_horizon"])
     discount_factor = float(config["planner"]["discount_factor"])
    
     grid_model = GridModel(width=grid.width, height=grid.height, depth=grid.depth)
@@ -99,19 +86,22 @@ def planner_run_simulation(grid, args, config):
             evader_position=evader.position,
             step_idx=time_steps,
         )
-
         decision = rollout_planner.improve_joint_action(
             state=state,
             pursuer_agents=pursuers,
             evader_agent=evader,
-            rng=rng,
+            rng=planner_rng,
         )
+        for idx, (selected_position, selected_q) in enumerate(
+            zip(decision.pursuer_next_positions, decision.selected_q_values), start=1
+        ):
+            print(f"SELECTED Agent {idx}: {selected_position}, Q={selected_q}")
 
         next_evader_position = evader.choose_action_from_state(
             current_position=evader.position,
             grid_model=grid_model,
             pursuer_positions=list(state.pursuer_positions),
-            rng=rng,
+            rng=evader_rng,
         )
         moved = grid.move_agent(evader.position, next_evader_position, agent_id=evader.agent_id)
         if moved:
