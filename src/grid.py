@@ -62,7 +62,14 @@ class Grid3D:
         ]
 
         if mover_role == AgentRole.EVADER:
-            return bounded_candidates[occupancy == 0]
+            valid_mask = occupancy == 0
+
+            # Allow the evader to choose the no-op action from its own cell.
+            same_cell_mask = np.all(bounded_candidates == current, axis=1)
+            if np.any(same_cell_mask):
+                valid_mask[same_cell_mask] = occupancy[same_cell_mask] == int(agent_id)
+
+            return bounded_candidates[valid_mask]
         if mover_role == AgentRole.PURSUER:
             valid_mask = occupancy == 0
             occupied_mask = occupancy != 0
@@ -73,6 +80,11 @@ class Grid3D:
                     dtype=object,
                 )
                 valid_mask[occupied_mask] = occupied_roles == AgentRole.EVADER
+
+            # Allow a pursuer to stay in its own current cell.
+            same_cell_mask = np.all(bounded_candidates == current, axis=1)
+            if np.any(same_cell_mask):
+                valid_mask[same_cell_mask] = occupancy[same_cell_mask] == int(agent_id)
             return bounded_candidates[valid_mask]
 
         raise ValueError(f"Unknown mover role for agent_id={agent_id}: {mover_role}")
@@ -105,6 +117,10 @@ class Grid3D:
             return False
 
         target_agent_id = int(self.grid[new_position.x, new_position.y, new_position.z])
+
+        # Staying in place is a valid no-op move.
+        if target_agent_id == int(agent_id):
+            return True
 
         if mover_role == AgentRole.EVADER:
             can_move = target_agent_id == 0
