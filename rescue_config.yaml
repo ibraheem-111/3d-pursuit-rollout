@@ -1,0 +1,25 @@
+rescue:
+  graph:
+    type: "sparse_grid"
+    width: 16
+    height: 16
+    extra_edge_probability: 0.18
+    seed: 7
+  agents:
+    starting_nodes:
+      - [0, 0]
+      - [15, 15]
+      - [0, 15]
+      - [15, 0]
+  lost_individuals:
+    knowledge: "unknown"
+    nodes:
+      - [3, 4]
+      - [12, 9]
+      - [7, 13]
+      - [14, 3]
+      - [5, 10]
+  simulation:
+    time_steps: 160
+    discount_factor: 0.99
+    revisit_penalty: 0.35
