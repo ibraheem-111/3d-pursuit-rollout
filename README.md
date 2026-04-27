@@ -33,6 +33,143 @@ uv run python scripts/collect_signaling_data.py \
   --sigma 5.0
 ```
 
+## Experimental Table Runs
+
+Use `scripts/run_experiment_table.py` to run repeated experiments for the four table methods:
+
+```bash
+uv run python -m compileall -q scripts/run_experiment_table.py
+uv run python -m unittest discover -s tests
+```
+
+The script evaluates:
+
+```text
+greedy
+non_autonomous_rollout
+autonomous_greedy_signaling
+autonomous_learned_signaling
+```
+
+It writes one experiment directory under `outputs/experiments/<timestamp>/` containing:
+
+```text
+raw_metrics.csv       # one row per run
+summary_table.csv     # numeric summary table
+summary_table.md      # Markdown table for reports
+summary_table.tex     # LaTeX table for the paper
+metadata.json         # experiment metadata
+config.yaml           # copied config used for the run
+```
+
+The summary table columns match the paper table:
+
+```text
+Method
+Capture Rate
+Avg. Capture Time
+Avg. Cost
+Runtime / Step
+```
+
+For `autonomous_learned_signaling`, the runner uses `planner.signaling_model_path` from `config.yaml`. If the model is missing or incompatible with the current grid/features, it automatically collects a fresh kernel model from non-autonomous rollout before running learned-signaling trials. To force a rebuild:
+
+```bash
+uv run python scripts/run_experiment_table.py \
+  --config config.yaml \
+  --runs 50 \
+  --base-seed 0 \
+  --refresh-signaling-model
+```
+
+Useful options:
+
+```bash
+--strategies greedy non_autonomous_rollout
+--output-dir outputs/experiments/my_run
+--signaling-model models/signaling_kernel.npz
+--signaling-episodes 50
+--capture-time-policy captured_only
+--capture-time-policy max_steps_for_failures
+```
+
+## Rescue Search Test Bed
+
+The rescue test bed models a team searching a graph for lost individuals. Nodes are locations, edges are feasible moves, agents may move to a neighbor or stay, and each unfound individual adds one unit of cost per time step.
+
+`rescue_config.yaml` uses a larger sparse grid graph by default. `graph.type: "sparse_grid"` starts from a connected corridor backbone and adds only some of the remaining grid edges, so the map looks more like a cave, dense forest, damaged building, or indoor fire scene than a fully traversable lattice. Tune `graph.extra_edge_probability` upward for more open terrain and downward for tighter chokepoints.
+
+Rollout strategies also include `simulation.revisit_penalty`, which adds planning cost when a candidate action sends an agent to an already explored node. This penalty affects non-autonomous and autonomous rollout scoring, but the reported rescue objective remains cumulative unfound-individual cost.
+
+Mathematically, let \(H_t \subseteq V\) be the explored nodes at time \(t\), \(u_t^i\) be agent \(i\)'s proposed next node, and \(\lambda \ge 0\) be `simulation.revisit_penalty`. The rollout-only revisit cost is:
+
+```text
+R(s_t, u_t) = lambda * sum_i 1[u_t^i in H_t]
+```
+
+The reported rescue objective remains:
+
+```text
+J = sum_t gamma^t * (# unfound individuals at time t)
+```
+
+but rollout action scoring uses:
+
+```text
+Q_rollout(s_t, u_t) =
+  (# unfound individuals at time t)
+  + R(s_t, u_t)
+  + gamma * V_base(s_{t+1})
+```
+
+So revisiting explored nodes is discouraged during rollout planning without changing the metric used to compare final search performance.
+
+Run every implemented rescue strategy:
+
+```bash
+uv run python scripts/run_rescue_testbed.py --config rescue_config.yaml --strategy all
+```
+
+Save static trajectory plots and animations:
+
+```bash
+uv run python scripts/run_rescue_testbed.py \
+  --config rescue_config.yaml \
+  --strategy all \
+  --plot \
+  --save-gif
+```
+
+Collect batch metrics over sampled rescue scenarios:
+
+```bash
+uv run python scripts/collect_rescue_data.py \
+  --config rescue_config.yaml \
+  --output outputs/rescue_metrics.csv \
+  --episodes 50 \
+  --seed 0 \
+  --strategy all
+```
+
+Create final-table rescue experiment outputs:
+
+```bash
+uv run python scripts/run_rescue_experiment_table.py \
+  --config rescue_config.yaml \
+  --runs 50 \
+  --base-seed 0
+```
+
+Available rescue strategies:
+
+```text
+greedy
+non_autonomous_rollout
+autonomous_greedy_signaling
+```
+
+For `lost_individuals.knowledge: "unknown"`, greedy moves each agent toward the closest unexplored node, with same-step target reservations to reduce duplicate coverage.
+
 Add multiple evaders by including multiple entries under `evaders:` in the config. Greedy and rollout strategies run until all active evaders are captured or `simulation.time_steps` is reached.
 
 ## Planner Behavior Notes
@@ -63,6 +200,7 @@ flowchart TD
 	B -- greedy --> C[Greedy pursuer simulation path]
 	B -- non_autonomous_rollout --> D[planner_run_simulation]
 	B -- autonomous_greedy_signaling --> D
+	B -- autonomous_learned_signaling --> D
 
 	D --> E[Read strategy and discount_factor]
 	E --> F[Build GridModel + BasePolicyEvaluator + selected rollout planner]
