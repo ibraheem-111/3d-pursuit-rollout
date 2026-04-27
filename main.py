@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import logging
 import argparse
 import ast
+import json
 import yaml
 import shutil
 from datetime import datetime
@@ -46,8 +47,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run the grid application.")
     parser.add_argument("--config", type=str, help="Path to the configuration file.")
 
-    parser.add_argument("--planner", action="store_true")
-    parser.add_argument("--horizon", type=int, help="Rollout horizon for planner-based simulation.")
+    parser.add_argument(
+        "--strategy",
+        choices=["greedy", "non_autonomous_rollout", "autonomous_greedy_signaling"],
+        default=None,
+        help="Simulation strategy. Overrides strategy in the config.",
+    )
 
     parser.add_argument("--pursuer-type", type=str, help="Optional pursuer strategy override.")
     parser.add_argument("--evader-type", type=str, help="Type of the evader.",
@@ -83,7 +88,7 @@ def main():
     logger.info(f"Run output directory: {run_dir}")
     logger.info(f"Saved run config to: {saved_config_path}")
 
-    result = run_simulation(grid, args, config=config, planner = args.planner)
+    result = run_simulation(grid, args, config=config)
 
     logger.info(f"Simulation finished after {result['time_steps']} time steps. Capture occurred: {result['capture_occurred']}")
 
@@ -103,6 +108,17 @@ def main():
     df = pd.DataFrame(positions)
     df.to_csv(positions_path, index=False)
     logger.info(f"Saved positions to {positions_path}")
+
+    metrics = result.get("metrics")
+    if metrics is not None:
+        metrics_json_path = run_dir / "metrics.json"
+        with open(metrics_json_path, "w", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=2)
+        logger.info("Saved metrics to %s", metrics_json_path)
+
+        metrics_csv_path = run_dir / "metrics.csv"
+        pd.DataFrame([metrics]).to_csv(metrics_csv_path, index=False)
+        logger.info("Saved metrics CSV to %s", metrics_csv_path)
 
     if plot_heatmap:
         fig, _ = plot_visit_heatmaps(

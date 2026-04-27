@@ -1,17 +1,30 @@
 import logging
+import time
 import numpy as np
 from src.agents.factory import AgentFactory
 from src.data_types.postion import Position
+from src.simulation.metrics import build_run_metrics, summarize_policy
 from src.utils.math_utils import find_closest_agent
-from src.simulation.planner import planner_run_simulation
+from src.simulation.planner import normalize_strategy, planner_run_simulation
 
 logger = logging.getLogger(__name__)
 
-def run_simulation(grid, args, config, planner, **kwargs):
-    logger.info("Starting simulation")
+def _configured_strategy(args, config):
+    strategy = getattr(args, "strategy", None)
+    if strategy is None:
+        strategy = config.get("strategy", "greedy")
+    return normalize_strategy(strategy)
 
-    if planner:
-        return planner_run_simulation(grid, args, config)
+
+def run_simulation(grid, args, config, **kwargs):
+    logger.info("Starting simulation")
+    run_start = time.perf_counter()
+    strategy = _configured_strategy(args, config)
+
+    if strategy in {"non_autonomous_rollout", "autonomous_greedy_signaling"}:
+        return planner_run_simulation(grid, args, config, strategy=strategy)
+    if strategy != "greedy":
+        raise RuntimeError(f"unknown simulation strategy: {strategy}")
 
     max_time_steps = config["simulation"]["time_steps"]
 
@@ -130,6 +143,27 @@ def run_simulation(grid, args, config, planner, **kwargs):
         time_steps += 1
 
     capture_occurred = len(active_evaders) == 0
+    total_runtime = time.perf_counter() - run_start
+    metrics = build_run_metrics(
+        strategy="greedy",
+        seed=seed,
+        grid=grid,
+        num_evaders=len(evaders),
+        num_pursuers=len(pursuers),
+        evader_policy=summarize_policy(evader_configs, evader_strategy_override),
+        pursuer_policy=summarize_policy(pursuer_configs, pursuer_strategy_override),
+        discount_factor=None,
+        max_time_steps=max_time_steps,
+        capture_occurred=capture_occurred,
+        time_steps=time_steps,
+        positions=positions,
+        total_runtime=total_runtime,
+        rollout_horizon=None,
+        num_rollout_samples=None,
+        common_random_numbers=False,
+        tie_breaking_rule="first_valid_min_manhattan_distance",
+        parallel_agent_rollout=False,
+    )
 
     return {
         "snapshots": snapshots,
@@ -138,5 +172,5 @@ def run_simulation(grid, args, config, planner, **kwargs):
         "time_steps": time_steps,
         "capture_occurred": capture_occurred,
         "remaining_evaders": len(active_evaders),
+        "metrics": metrics,
     }
-

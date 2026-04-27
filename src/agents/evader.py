@@ -19,8 +19,15 @@ class RandomWalkEvaderAgent(Agent):
         move_idx = int(rng.integers(0, valid_moves.shape[0]))
         move = valid_moves[move_idx]
         return Position(x=int(move[0]), y=int(move[1]), z=int(move[2]))
-    
-    def choose_action_from_state(self, current_position, grid_model, pursuer_positions, rng=None):
+    def choose_action_from_state(
+        self,
+        current_position,
+        grid_model,
+        pursuer_positions,
+        rng=None,
+        evader_positions=None,
+        pursuer_agent_ids=None,
+    ):
         if rng is None:
             rng = np.random.default_rng(0)
 
@@ -29,6 +36,8 @@ class RandomWalkEvaderAgent(Agent):
             agent_id=self.agent_id,
             occupied_positions=pursuer_positions,
             evader_position=current_position,
+            evader_positions=evader_positions,
+            occupied_agent_ids=pursuer_agent_ids,
         )
         if len(valid_moves) == 0:
             return current_position
@@ -75,4 +84,38 @@ class EvasiveEvaderAgent(Agent):
         best_move = valid_moves[best_move_idx]
         return Position(x=int(best_move[0]), y=int(best_move[1]), z=int(best_move[2]))
 
-    
+    def choose_action_from_state(
+        self,
+        current_position,
+        grid_model,
+        pursuer_positions,
+        rng=None,
+        evader_positions=None,
+        pursuer_agent_ids=None,
+    ):
+        valid_moves = grid_model.get_valid_moves(
+            position=current_position,
+            agent_id=self.agent_id,
+            occupied_positions=pursuer_positions,
+            evader_position=current_position,
+            evader_positions=evader_positions,
+            occupied_agent_ids=pursuer_agent_ids,
+        )
+        if len(valid_moves) == 0:
+            return current_position
+
+        valid_moves_array = np.array([p.as_tuple() for p in valid_moves], dtype=int)
+        distances = distance_matrix(
+            [np.array(pursuer_position.as_tuple()) for pursuer_position in pursuer_positions],
+            [np.array(current_position.as_tuple())],
+        )
+        closest_pursuer_idx = np.argmin(distances)
+        closest_pursuer_position = pursuer_positions[closest_pursuer_idx]
+
+        target_distances = distance_matrix(
+            [np.array(closest_pursuer_position.as_tuple())],
+            valid_moves_array,
+        )
+        best_move_idx = np.argmax(target_distances)
+        best_move = valid_moves_array[best_move_idx]
+        return Position(x=int(best_move[0]), y=int(best_move[1]), z=int(best_move[2]))

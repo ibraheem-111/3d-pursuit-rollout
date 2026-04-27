@@ -1,17 +1,48 @@
 import logging
+import time
 import numpy as np
 from src.agents.factory import AgentFactory
-from src.data_types import GameState, state
+from src.data_types import GameState
 from src.data_types.postion import Position
+from src.planner.autonomous_rollout import AutonomousGreedySignalingRolloutPlanner
 from src.planner.base_policy_evaluator import BasePolicyEvaluator
 from src.planner.grid_model import GridModel
 from src.planner.nonautonomous_rollout import NonAutonomousRolloutPlanner
+from src.simulation.metrics import build_run_metrics, summarize_policy
 
 
 logger = logging.getLogger(__name__)
 
-def planner_run_simulation(grid, args, config):
+
+def normalize_strategy(strategy: str) -> str:
+    normalized = strategy.strip().lower().replace("-", "_")
+    aliases = {
+        "nonautonomous": "non_autonomous_rollout",
+        "nonautonomous_rollout": "non_autonomous_rollout",
+        "autonomous_greedy": "autonomous_greedy_signaling",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _create_rollout_planner(strategy, grid_model, base_evaluator, discount_factor):
+    normalized_strategy = normalize_strategy(strategy)
+    if normalized_strategy == "non_autonomous_rollout":
+        return NonAutonomousRolloutPlanner(
+            grid_model=grid_model,
+            base_evaluator=base_evaluator,
+            alpha=discount_factor,
+        )
+    if normalized_strategy == "autonomous_greedy_signaling":
+        return AutonomousGreedySignalingRolloutPlanner(
+            grid_model=grid_model,
+            base_evaluator=base_evaluator,
+            alpha=discount_factor,
+        )
+    raise RuntimeError(f"unknown planner strategy: {strategy}")
+
+def planner_run_simulation(grid, args, config, strategy):
     """Run planner-based simulation for one evader and multiple pursuers."""
+    run_start = time.perf_counter()
 
     max_time_steps = config["simulation"]["time_steps"]
 
@@ -22,37 +53,50 @@ def planner_run_simulation(grid, args, config):
     pursuer_strategy_override = args.pursuer_type
 
     seed = args.seed
+    if seed is not None:
+        seed = int(seed)
 
     planner_rng = np.random.default_rng(seed)
     evader_rng = np.random.default_rng(seed + 10_000 if seed is not None else None)
 
-    rollout_horizon = int(config["planner"]["rollout_horizon"])
     discount_factor = float(config["planner"]["discount_factor"])
+    strategy = normalize_strategy(strategy)
    
     grid_model = GridModel(width=grid.width, height=grid.height, depth=grid.depth)
 
-    base_evaluator = BasePolicyEvaluator(grid_model=grid_model, alpha=discount_factor, rollout_horizon=rollout_horizon)
-    rollout_planner = NonAutonomousRolloutPlanner(grid_model=grid_model, base_evaluator=base_evaluator, alpha=discount_factor)
-
-    evader_config = evader_configs[0]
-    evader = AgentFactory.create_agent(
-        agent_type="evader",
-        strategy=evader_strategy_override if evader_strategy_override is not None else evader_config["strategy"],
-        name="evader_0",
-        agent_id=1,
-        position=Position(
-            x=int(evader_config["starting_position"][0]),
-            y=int(evader_config["starting_position"][1]),
-            z=int(evader_config["starting_position"][2]),
-        ),
+    base_evaluator = BasePolicyEvaluator(grid_model=grid_model, alpha=discount_factor)
+    rollout_planner = _create_rollout_planner(
+        strategy=strategy,
+        grid_model=grid_model,
+        base_evaluator=base_evaluator,
+        discount_factor=discount_factor,
     )
+    logger.info("Using strategy=%s", strategy)
+
+    if len(evader_configs) == 0:
+        raise RuntimeError("config['evaders'] must contain at least one evader")
+
+    evaders = [
+        AgentFactory.create_agent(
+            agent_type="evader",
+            strategy=evader_strategy_override if evader_strategy_override is not None else evader_config["strategy"],
+            name=f"evader_{idx}",
+            agent_id=idx + 1,
+            position=Position(
+                x=int(evader_config["starting_position"][0]),
+                y=int(evader_config["starting_position"][1]),
+                z=int(evader_config["starting_position"][2]),
+            ),
+        )
+        for idx, evader_config in enumerate(evader_configs)
+    ]
 
     pursuers = [
         AgentFactory.create_agent(
             agent_type="pursuer",
             strategy=pursuer_strategy_override if pursuer_strategy_override is not None else pursuer_config["strategy"],
             name=f"pursuer_{idx}",
-            agent_id=idx + 2,
+            agent_id=len(evaders) + idx + 1,
             position=Position(
                 x=int(pursuer_config["starting_position"][0]),
                 y=int(pursuer_config["starting_position"][1]),
@@ -62,8 +106,10 @@ def planner_run_simulation(grid, args, config):
         for idx, pursuer_config in enumerate(pursuer_configs)
     ]
 
-    placed = grid.place_agent(evader.position, agent_id=evader.agent_id, role=evader.role)
-    if not placed:
+    for evader in evaders:
+        placed = grid.place_agent(evader.position, agent_id=evader.agent_id, role=evader.role)
+        if placed:
+            continue
         raise RuntimeError(f"failed to place {evader.name} at the start position")
 
     for pursuer in pursuers:
@@ -72,24 +118,26 @@ def planner_run_simulation(grid, args, config):
             continue
         raise RuntimeError(f"failed to place {pursuer.name} at the start position")
 
+    active_evaders = list(evaders)
+
     snapshots = [grid.grid.copy()]
     positions = [{
-        "evaders": [evader.position],
+        "evaders": [evader.position for evader in active_evaders],
         "pursuers": [pursuer.position for pursuer in pursuers],
     }]
 
     capture_occurred = False
     time_steps = 0
-    while not capture_occurred and time_steps < max_time_steps:
+    while len(active_evaders) > 0 and time_steps < max_time_steps:
         state = GameState(
             pursuer_positions=tuple(p.position for p in pursuers),
-            evader_position=evader.position,
+            evader_positions=tuple(evader.position for evader in active_evaders),
             step_idx=time_steps,
         )
         decision = rollout_planner.improve_joint_action(
             state=state,
             pursuer_agents=pursuers,
-            evader_agent=evader,
+            evader_agents=active_evaders,
             rng=planner_rng,
         )
         for idx, (selected_position, selected_q) in enumerate(
@@ -97,30 +145,37 @@ def planner_run_simulation(grid, args, config):
         ):
             print(f"SELECTED Agent {idx}: {selected_position}, Q={selected_q}")
 
-        next_evader_position = evader.choose_action_from_state(
-            current_position=evader.position,
-            grid_model=grid_model,
-            pursuer_positions=list(state.pursuer_positions),
-            rng=evader_rng,
-        )
-        moved = grid.move_agent(evader.position, next_evader_position, agent_id=evader.agent_id)
-        if moved:
-            evader.move(next_evader_position)
+        for evader in active_evaders:
+            next_evader_position = evader.choose_action_from_state(
+                current_position=evader.position,
+                grid_model=grid_model,
+                pursuer_positions=list(state.pursuer_positions),
+                evader_positions=list(state.evader_positions),
+                pursuer_agent_ids=[pursuer.agent_id for pursuer in pursuers],
+                rng=evader_rng,
+            )
+            moved = grid.move_agent(evader.position, next_evader_position, agent_id=evader.agent_id)
+            if moved:
+                evader.move(next_evader_position)
 
         for pursuer, next_pursuer_position in zip(pursuers, decision.pursuer_next_positions):
             moved = grid.move_agent(pursuer.position, next_pursuer_position, agent_id=pursuer.agent_id)
             if moved:
                 pursuer.move(next_pursuer_position)
 
-            if pursuer.position == evader.position:
-                capture_occurred = True
-                break
+        active_evaders = [
+            evader
+            for evader in active_evaders
+            if int(evader.agent_id) in grid.agent_roles_by_id
+        ]
 
         snapshots.append(grid.grid.copy())
         positions.append({
-            "evaders": [] if capture_occurred else [evader.position],
+            "evaders": [evader.position for evader in active_evaders],
             "pursuers": [pursuer.position for pursuer in pursuers],
         })
+
+        capture_occurred = len(active_evaders) == 0
 
         logger.debug(
             "Planner timestep %d: capture=%s, pursuers=%d",
@@ -130,13 +185,33 @@ def planner_run_simulation(grid, args, config):
         )
         time_steps += 1
 
+    capture_occurred = len(active_evaders) == 0
+    total_runtime = time.perf_counter() - run_start
+    metrics = build_run_metrics(
+        strategy=strategy,
+        seed=seed,
+        grid=grid,
+        num_evaders=len(evaders),
+        num_pursuers=len(pursuers),
+        evader_policy=summarize_policy(evader_configs, evader_strategy_override),
+        pursuer_policy=summarize_policy(pursuer_configs, pursuer_strategy_override),
+        discount_factor=discount_factor,
+        max_time_steps=max_time_steps,
+        capture_occurred=capture_occurred,
+        time_steps=time_steps,
+        positions=positions,
+        total_runtime=total_runtime,
+        parallel_agent_rollout=strategy == "autonomous_greedy_signaling",
+    )
+
     return {
         "snapshots": snapshots,
         "positions": positions,
         "grid_size": [grid.width, grid.height, grid.depth],
         "time_steps": time_steps,
         "capture_occurred": capture_occurred,
-        "remaining_evaders": 0 if capture_occurred else 1,
+        "remaining_evaders": len(active_evaders),
+        "metrics": metrics,
     }
 
     

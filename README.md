@@ -10,17 +10,27 @@ Integrate the planner based simulation with the visualization code
 Install UV
 and do ``` uv sync ```
 
-then ``` uv run main.py --config config.yaml ```
+then ``` uv run python main.py --config config.yaml ```
+
+Choose the controller with one unified strategy flag:
+
+```bash
+uv run python main.py --config config.yaml --strategy greedy
+uv run python main.py --config config.yaml --strategy non_autonomous_rollout
+uv run python main.py --config config.yaml --strategy autonomous_greedy_signaling
+```
+
+Add multiple evaders by including multiple entries under `evaders:` in the config. Greedy and rollout strategies run until all active evaders are captured or `simulation.time_steps` is reached.
 
 ## Planner Behavior Notes
 
-### Are all pursuers using infinite-horizon rollout when `--horizon 0`?
+### Are all pursuers using infinite-horizon rollout?
 
-Yes for scoring, with an important nuance.
+Yes. Planner scoring uses an infinite-horizon discounted value rollout approximation, with an important nuance.
 
-- When `--horizon 0` is passed, the base evaluator uses an infinite-horizon value rollout approximation (it keeps simulating until capture or discounted tail is negligible).
+- The base evaluator keeps simulating until capture or until the remaining discounted tail is negligible.
 - Every pursuer candidate action is scored through that same evaluator.
-- The planner is still **nonautonomous one-agent-at-a-time rollout improvement**, not full joint optimization in one solve.
+- The default planner is still **nonautonomous one-agent-at-a-time rollout improvement**, not full joint optimization in one solve.
 
 So each pursuer participates in infinite-horizon scoring, but decisions are improved sequentially (`P0`, then `P1`, then `P2`, ...), which can create order bias.
 
@@ -32,16 +42,17 @@ So each pursuer participates in infinite-horizon scoring, but decisions are impr
 
 This can make `P0` seem strongest even when later pursuers are also being evaluated.
 
-## Planner Flowchart
+## Strategy Flowchart
 
 ```mermaid
 flowchart TD
-	A[CLI args + config] --> B{Planner mode?}
-	B -- no --> C[Baseline simulation path]
-	B -- yes --> D[planner_run_simulation]
+	A[CLI args + config] --> B{strategy}
+	B -- greedy --> C[Greedy pursuer simulation path]
+	B -- non_autonomous_rollout --> D[planner_run_simulation]
+	B -- autonomous_greedy_signaling --> D
 
-	D --> E[Read horizon and discount_factor]
-	E --> F[Build GridModel + BasePolicyEvaluator + NonAutonomousRolloutPlanner]
+	D --> E[Read strategy and discount_factor]
+	E --> F[Build GridModel + BasePolicyEvaluator + selected rollout planner]
 	F --> G[Create and place evader/pursuers]
 	G --> H{capture or max steps?}
 
@@ -53,12 +64,9 @@ flowchart TD
 	L --> M[Assemble provisional joint action]
 	M --> N[Compute Q = stage_cost + alpha * cost_to_go]
 
-	N --> O{horizon == 0?}
-	O -- yes --> P[Infinite-horizon evaluator loop\nuntil capture or discounted-tail tolerance]
-	O -- no --> Q[Finite-horizon evaluator loop\nfor rollout_horizon steps]
+	N --> P[Infinite-horizon evaluator loop\nuntil capture or discounted-tail tolerance]
 
 	P --> R[Select best move for pursuer i]
-	Q --> R
 	R --> S[After all i, return joint pursuer move]
 
 	S --> T[Sample evader move]

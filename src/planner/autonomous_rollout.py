@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import copy
+import multiprocessing
+import os
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import List
 
 import numpy as np
 
-from src.data_types.postion import Position
 from src.data_types import GameState
+from src.data_types.postion import Position
 from src.utils.math_utils import manhattan_distance
 
 
@@ -18,7 +21,33 @@ class JointDecision:
     selected_q_values: List[float]
 
 
-class NonAutonomousRolloutPlanner:
+@dataclass
+class AgentImprovement:
+    pursuer_index: int
+    best_move: Position
+    best_q: float
+    log_lines: List[str]
+
+
+def _process_pool_context():
+    if "fork" in multiprocessing.get_all_start_methods():
+        return multiprocessing.get_context("fork")
+    return None
+
+
+def _improve_agent_worker(args):
+    planner, state, pursuer_index, pursuer_agents, evader_agents, comparison_rng_state = args
+    return planner._improve_single_agent(
+        state=state,
+        pursuer_index=pursuer_index,
+        pursuer_agents=pursuer_agents,
+        evader_agents=evader_agents,
+        comparison_rng_state=comparison_rng_state,
+        emit_logs=False,
+    )
+
+
+class AutonomousGreedySignalingRolloutPlanner:
     def __init__(self, grid_model, base_evaluator, alpha: float = 0.95):
         self.grid_model = grid_model
         self.base_evaluator = base_evaluator
@@ -36,11 +65,6 @@ class NonAutonomousRolloutPlanner:
         if rng is None:
             return None
         return copy.deepcopy(rng.bit_generator.state)
-
-    def _restore_rng_state(self, rng, rng_state):
-        if rng is None or rng_state is None:
-            return
-        rng.bit_generator.state = copy.deepcopy(rng_state)
 
     def _distance_to_evader(self, position, state):
         if len(state.evader_positions) == 0:
@@ -64,33 +88,80 @@ class NonAutonomousRolloutPlanner:
         ]
 
     def improve_joint_action(self, state: GameState, pursuer_agents, evader_agents, rng=None) -> JointDecision:
-        chosen_moves: Dict[int, Position] = {}
-        selected_q_values: Dict[int, float] = {}
+        comparison_rng_state = self._capture_rng_state(rng)
+        improvements = self._improve_agents_parallel(
+            state=state,
+            pursuer_agents=pursuer_agents,
+            evader_agents=evader_agents,
+            comparison_rng_state=comparison_rng_state,
+        )
 
-        for i, _agent in enumerate(pursuer_agents):
-            best_move, best_q = self._improve_single_agent(
-                state=state,
-                pursuer_index=i,
-                chosen_moves=chosen_moves,
-                pursuer_agents=pursuer_agents,
-                evader_agents=evader_agents,
-                rng=rng,
-            )
-            chosen_moves[i] = best_move
-            selected_q_values[i] = best_q
+        selected_moves = []
+        selected_q_values = []
+        for improvement in improvements:
+            for line in improvement.log_lines:
+                print(line)
+            selected_moves.append(improvement.best_move)
+            selected_q_values.append(improvement.best_q)
 
-        ordered_moves = [chosen_moves[i] for i in range(len(pursuer_agents))]
-        ordered_selected_q_values = [selected_q_values[i] for i in range(len(pursuer_agents))]
         q_val = self._joint_q_value(
             state=state,
             pursuer_agents=pursuer_agents,
             evader_agents=evader_agents,
-            pursuer_moves=ordered_moves,
+            pursuer_moves=selected_moves,
             rng=rng,
         )
-        return JointDecision(ordered_moves, q_val, ordered_selected_q_values)
+        return JointDecision(selected_moves, q_val, selected_q_values)
 
-    def _improve_single_agent(self, state, pursuer_index, chosen_moves, pursuer_agents, evader_agents, rng=None):
+    def _improve_agents_parallel(self, state, pursuer_agents, evader_agents, comparison_rng_state):
+        if len(pursuer_agents) == 0:
+            return []
+
+        if len(pursuer_agents) <= 1:
+            return [
+                self._improve_single_agent(
+                    state=state,
+                    pursuer_index=0,
+                    pursuer_agents=pursuer_agents,
+                    evader_agents=evader_agents,
+                    comparison_rng_state=comparison_rng_state,
+                    emit_logs=True,
+                )
+            ]
+
+        tasks = [
+            (self, state, i, pursuer_agents, evader_agents, comparison_rng_state)
+            for i, _agent in enumerate(pursuer_agents)
+        ]
+        executor_kwargs = {
+            "max_workers": min(len(pursuer_agents), os.cpu_count() or 1),
+        }
+        mp_context = _process_pool_context()
+        if mp_context is not None:
+            executor_kwargs["mp_context"] = mp_context
+
+        with ProcessPoolExecutor(**executor_kwargs) as executor:
+            improvements = list(executor.map(_improve_agent_worker, tasks))
+
+        return sorted(improvements, key=lambda improvement: improvement.pursuer_index)
+
+    def _improve_single_agent(
+        self,
+        state,
+        pursuer_index,
+        pursuer_agents,
+        evader_agents,
+        comparison_rng_state,
+        emit_logs=True,
+    ):
+        log_lines = []
+
+        def emit(line):
+            if emit_logs:
+                print(line)
+            else:
+                log_lines.append(line)
+
         current_pos = state.pursuer_positions[pursuer_index]
         candidate_moves = self.grid_model.get_valid_moves(
             position=current_pos,
@@ -101,19 +172,16 @@ class NonAutonomousRolloutPlanner:
         )
 
         if len(candidate_moves) == 0:
-            return current_pos, float("inf")
+            return AgentImprovement(pursuer_index, current_pos, float("inf"), log_lines)
 
         best_move = current_pos
         best_q = float("inf")
         best_distance = self._distance_to_evader(best_move, state)
         tie_tolerance = 1e-9
-        # Compare candidate moves against the same rollout randomness.
-        comparison_rng_state = self._capture_rng_state(rng)
-        selected_rng_state = None
 
-        print(f"State step={state.step_idx}, evaders={state.evader_positions}")
-        print(f"pursuers={state.pursuer_positions}")
-        print(f"Agent {pursuer_index}")
+        emit(f"State step={state.step_idx}, evaders={state.evader_positions}")
+        emit(f"pursuers={state.pursuer_positions}")
+        emit(f"Autonomous Agent {pursuer_index}")
 
         for candidate in candidate_moves:
             candidate_rng = self._rng_from_state(comparison_rng_state)
@@ -121,7 +189,6 @@ class NonAutonomousRolloutPlanner:
                 state=state,
                 pursuer_index=pursuer_index,
                 candidate_move=candidate,
-                chosen_moves=chosen_moves,
                 pursuer_agents=pursuer_agents,
             )
 
@@ -134,27 +201,22 @@ class NonAutonomousRolloutPlanner:
             )
 
             candidate_distance = self._distance_to_evader(candidate, state)
-
             if q_val < best_q - tie_tolerance or (
                 abs(q_val - best_q) <= tie_tolerance and candidate_distance < best_distance
             ):
                 best_q = q_val
                 best_move = candidate
                 best_distance = candidate_distance
-                selected_rng_state = self._capture_rng_state(candidate_rng)
 
-            print(candidate, q_val, "dist_to_evader=", candidate_distance)
+            emit(f"{candidate} {q_val} dist_to_evader= {candidate_distance}")
 
-        self._restore_rng_state(rng, selected_rng_state)
-        return best_move, best_q
+        return AgentImprovement(pursuer_index, best_move, best_q, log_lines)
 
-    def _assemble_joint_moves(self, state, pursuer_index, candidate_move, chosen_moves, pursuer_agents):
+    def _assemble_joint_moves(self, state, pursuer_index, candidate_move, pursuer_agents):
         joint_moves = []
 
         for j, agent in enumerate(pursuer_agents):
-            if j in chosen_moves:
-                joint_moves.append(chosen_moves[j])
-            elif j == pursuer_index:
+            if j == pursuer_index:
                 joint_moves.append(candidate_move)
             else:
                 base_move = agent.choose_action_from_state(

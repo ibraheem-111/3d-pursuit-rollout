@@ -21,12 +21,22 @@ class GreedyAgent(Agent):
         best_move = valid_moves[best_move_idx]
         return type(self.position)(x=int(best_move[0]), y=int(best_move[1]), z=int(best_move[2]))
             
-    def choose_action_from_state(self, current_position, target_position, grid_model, pursuer_positions):
+    def choose_action_from_state(
+        self,
+        current_position,
+        target_position,
+        grid_model,
+        pursuer_positions,
+        evader_positions=None,
+        pursuer_agent_ids=None,
+    ):
         valid_moves = grid_model.get_valid_moves(
             position=current_position,
             agent_id=self.agent_id,
             occupied_positions=pursuer_positions,
             evader_position=target_position,
+            evader_positions=evader_positions,
+            occupied_agent_ids=pursuer_agent_ids,
         )
         if len(valid_moves) == 0:
             return current_position
