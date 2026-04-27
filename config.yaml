@@ -1,17 +1,21 @@
 strategy: "non_autonomous_rollout"
 evaders:
   - strategy: "random"
-    starting_position: [20, 0, 0]
+    starting_position: [9, 0, 1]
   - strategy: "random"
-    starting_position: [20, 39, 0]
+    starting_position: [10, 19, 1]
 pursuers:
   - strategy: "greedy"
-    starting_position: [21, 20, 0]
+    starting_position: [9, 9, 1]
   - strategy: "greedy"
-    starting_position: [19, 20, 0]
+    starting_position: [10, 9, 1]
+  - strategy: "greedy"
+    starting_position: [9, 10, 1]
+  - strategy: "greedy"
+    starting_position: [10, 10, 1]
 simulation:
-  time_steps: 50
-  grid_size: [40, 40, 1]
+  time_steps: 100
+  grid_size: [20, 20, 3]
 planner:
   discount_factor: 0.99
   signaling_model_path: "models/signaling_kernel.npz"
