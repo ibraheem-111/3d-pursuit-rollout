@@ -18,6 +18,19 @@ Choose the controller with one unified strategy flag:
 uv run python main.py --config config.yaml --strategy greedy
 uv run python main.py --config config.yaml --strategy non_autonomous_rollout
 uv run python main.py --config config.yaml --strategy autonomous_greedy_signaling
+uv run python main.py --config config.yaml --strategy autonomous_learned_signaling --signaling-model models/signaling_kernel.npz
+```
+
+Collect an offline kernel-signaling dataset/model from non-autonomous rollout:
+
+```bash
+uv run python scripts/collect_signaling_data.py \
+  --config config.yaml \
+  --output models/signaling_kernel.npz \
+  --episodes 25 \
+  --seed 0 \
+  --k 25 \
+  --sigma 5.0
 ```
 
 Add multiple evaders by including multiple entries under `evaders:` in the config. Greedy and rollout strategies run until all active evaders are captured or `simulation.time_steps` is reached.

@@ -49,10 +49,18 @@ def parse_args():
 
     parser.add_argument(
         "--strategy",
-        choices=["greedy", "non_autonomous_rollout", "autonomous_greedy_signaling"],
+        choices=[
+            "greedy",
+            "non_autonomous_rollout",
+            "autonomous_greedy_signaling",
+            "autonomous_learned_signaling",
+        ],
         default=None,
         help="Simulation strategy. Overrides strategy in the config.",
     )
+    parser.add_argument("--signaling-model", type=str, default=None, help="Path to a kernel signaling .npz model.")
+    parser.add_argument("--signaling-k", type=int, default=None, help="Number of neighbors for kernel signaling.")
+    parser.add_argument("--signaling-sigma", type=float, default=None, help="Bandwidth for kernel signaling.")
 
     parser.add_argument("--pursuer-type", type=str, help="Optional pursuer strategy override.")
     parser.add_argument("--evader-type", type=str, help="Type of the evader.",

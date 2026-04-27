@@ -22,7 +22,7 @@ class GridModel:
         )
 
     def stage_cost(self, state: GameState) -> float:
-        return 0.0 if self.is_capture(state) else 1.0
+        return float(len(state.evader_positions))
 
     def get_valid_moves(
         self,

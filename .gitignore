@@ -3,3 +3,5 @@ outputs/*
 .github/*
 *.txt
 .codex
+data/*
+models/*

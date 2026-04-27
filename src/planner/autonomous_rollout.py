@@ -11,6 +11,7 @@ import numpy as np
 
 from src.data_types import GameState
 from src.data_types.postion import Position
+from src.planner.signaling_policy import GreedySignalingPolicy
 from src.utils.math_utils import manhattan_distance
 
 
@@ -27,6 +28,8 @@ class AgentImprovement:
     best_move: Position
     best_q: float
     log_lines: List[str]
+    signaling_prediction_count: int = 0
+    signaling_invalid_prediction_count: int = 0
 
 
 def _process_pool_context():
@@ -48,10 +51,13 @@ def _improve_agent_worker(args):
 
 
 class AutonomousGreedySignalingRolloutPlanner:
-    def __init__(self, grid_model, base_evaluator, alpha: float = 0.95):
+    def __init__(self, grid_model, base_evaluator, alpha: float = 0.95, signaling_policy=None):
         self.grid_model = grid_model
         self.base_evaluator = base_evaluator
         self.alpha = alpha
+        self.signaling_policy = signaling_policy or GreedySignalingPolicy(grid_model)
+        self.signaling_prediction_count = 0
+        self.signaling_invalid_prediction_count = 0
 
     def _rng_from_state(self, rng_state):
         if rng_state is None:
@@ -98,6 +104,12 @@ class AutonomousGreedySignalingRolloutPlanner:
 
         selected_moves = []
         selected_q_values = []
+        self.signaling_prediction_count += sum(
+            improvement.signaling_prediction_count for improvement in improvements
+        )
+        self.signaling_invalid_prediction_count += sum(
+            improvement.signaling_invalid_prediction_count for improvement in improvements
+        )
         for improvement in improvements:
             for line in improvement.log_lines:
                 print(line)
@@ -178,6 +190,8 @@ class AutonomousGreedySignalingRolloutPlanner:
         best_q = float("inf")
         best_distance = self._distance_to_evader(best_move, state)
         tie_tolerance = 1e-9
+        signaling_prediction_count_before = getattr(self.signaling_policy, "prediction_count", 0)
+        signaling_invalid_count_before = getattr(self.signaling_policy, "invalid_prediction_count", 0)
 
         emit(f"State step={state.step_idx}, evaders={state.evader_positions}")
         emit(f"pursuers={state.pursuer_positions}")
@@ -210,7 +224,16 @@ class AutonomousGreedySignalingRolloutPlanner:
 
             emit(f"{candidate} {q_val} dist_to_evader= {candidate_distance}")
 
-        return AgentImprovement(pursuer_index, best_move, best_q, log_lines)
+        signaling_prediction_count_after = getattr(self.signaling_policy, "prediction_count", 0)
+        signaling_invalid_count_after = getattr(self.signaling_policy, "invalid_prediction_count", 0)
+        return AgentImprovement(
+            pursuer_index=pursuer_index,
+            best_move=best_move,
+            best_q=best_q,
+            log_lines=log_lines,
+            signaling_prediction_count=signaling_prediction_count_after - signaling_prediction_count_before,
+            signaling_invalid_prediction_count=signaling_invalid_count_after - signaling_invalid_count_before,
+        )
 
     def _assemble_joint_moves(self, state, pursuer_index, candidate_move, pursuer_agents):
         joint_moves = []
@@ -219,13 +242,10 @@ class AutonomousGreedySignalingRolloutPlanner:
             if j == pursuer_index:
                 joint_moves.append(candidate_move)
             else:
-                base_move = agent.choose_action_from_state(
-                    current_position=state.pursuer_positions[j],
-                    target_position=self._target_for_pursuer(state.pursuer_positions[j], state),
-                    grid_model=self.grid_model,
-                    pursuer_positions=list(state.pursuer_positions),
-                    evader_positions=list(state.evader_positions),
-                    pursuer_agent_ids=[pursuer.agent_id for pursuer in pursuer_agents],
+                base_move = self.signaling_policy.predict_move(
+                    state=state,
+                    pursuer_index=j,
+                    pursuer_agents=pursuer_agents,
                 )
                 joint_moves.append(base_move)
 

@@ -21,7 +21,7 @@ def run_simulation(grid, args, config, **kwargs):
     run_start = time.perf_counter()
     strategy = _configured_strategy(args, config)
 
-    if strategy in {"non_autonomous_rollout", "autonomous_greedy_signaling"}:
+    if strategy in {"non_autonomous_rollout", "autonomous_greedy_signaling", "autonomous_learned_signaling"}:
         return planner_run_simulation(grid, args, config, strategy=strategy)
     if strategy != "greedy":
         raise RuntimeError(f"unknown simulation strategy: {strategy}")

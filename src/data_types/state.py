@@ -3,6 +3,7 @@ from typing import Optional, Tuple
 
 from src.data_types.postion import Position
 
+
 @dataclass(frozen=True, slots=True, init=False)
 class GameState:
     pursuer_positions: Tuple[Position, ...]

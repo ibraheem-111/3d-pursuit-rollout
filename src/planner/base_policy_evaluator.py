@@ -80,7 +80,8 @@ class BasePolicyEvaluator:
             total += discount * stage_cost
             discount *= self.alpha
 
-            if discount / (1.0 - self.alpha) <= tail_tolerance:
+            max_remaining_stage_cost = max(len(sim_state.evader_positions), 1)
+            if discount * max_remaining_stage_cost / (1.0 - self.alpha) <= tail_tolerance:
                 break
 
         return total

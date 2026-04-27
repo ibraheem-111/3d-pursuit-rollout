@@ -8,6 +8,7 @@ from src.planner.autonomous_rollout import AutonomousGreedySignalingRolloutPlann
 from src.planner.base_policy_evaluator import BasePolicyEvaluator
 from src.planner.grid_model import GridModel
 from src.planner.nonautonomous_rollout import NonAutonomousRolloutPlanner
+from src.planner.signaling_policy import KernelLearnedSignalingPolicy
 from src.simulation.metrics import build_run_metrics, summarize_policy
 
 
@@ -20,11 +21,24 @@ def normalize_strategy(strategy: str) -> str:
         "nonautonomous": "non_autonomous_rollout",
         "nonautonomous_rollout": "non_autonomous_rollout",
         "autonomous_greedy": "autonomous_greedy_signaling",
+        "learned_signaling": "autonomous_learned_signaling",
     }
     return aliases.get(normalized, normalized)
 
 
-def _create_rollout_planner(strategy, grid_model, base_evaluator, discount_factor):
+def _signaling_model_config(args, config):
+    planner_config = config.get("planner", {})
+    model_path = getattr(args, "signaling_model", None) or planner_config.get("signaling_model_path")
+    k = getattr(args, "signaling_k", None)
+    if k is None:
+        k = planner_config.get("signaling_k", 25)
+    sigma = getattr(args, "signaling_sigma", None)
+    if sigma is None:
+        sigma = planner_config.get("signaling_sigma", 5.0)
+    return model_path, int(k), float(sigma)
+
+
+def _create_rollout_planner(strategy, grid_model, base_evaluator, discount_factor, args=None, config=None):
     normalized_strategy = normalize_strategy(strategy)
     if normalized_strategy == "non_autonomous_rollout":
         return NonAutonomousRolloutPlanner(
@@ -37,6 +51,25 @@ def _create_rollout_planner(strategy, grid_model, base_evaluator, discount_facto
             grid_model=grid_model,
             base_evaluator=base_evaluator,
             alpha=discount_factor,
+        )
+    if normalized_strategy == "autonomous_learned_signaling":
+        model_path, k, sigma = _signaling_model_config(args, config)
+        if model_path is None:
+            raise RuntimeError(
+                "autonomous_learned_signaling requires --signaling-model "
+                "or planner.signaling_model_path in config"
+            )
+        signaling_policy = KernelLearnedSignalingPolicy.load(
+            grid_model=grid_model,
+            path=model_path,
+            k=k,
+            sigma=sigma,
+        )
+        return AutonomousGreedySignalingRolloutPlanner(
+            grid_model=grid_model,
+            base_evaluator=base_evaluator,
+            alpha=discount_factor,
+            signaling_policy=signaling_policy,
         )
     raise RuntimeError(f"unknown planner strategy: {strategy}")
 
@@ -70,6 +103,8 @@ def planner_run_simulation(grid, args, config, strategy):
         grid_model=grid_model,
         base_evaluator=base_evaluator,
         discount_factor=discount_factor,
+        args=args,
+        config=config,
     )
     logger.info("Using strategy=%s", strategy)
 
@@ -201,8 +236,26 @@ def planner_run_simulation(grid, args, config, strategy):
         time_steps=time_steps,
         positions=positions,
         total_runtime=total_runtime,
-        parallel_agent_rollout=strategy == "autonomous_greedy_signaling",
+        parallel_agent_rollout=strategy in {"autonomous_greedy_signaling", "autonomous_learned_signaling"},
     )
+    if strategy == "autonomous_learned_signaling":
+        model_path, k, sigma = _signaling_model_config(args, config)
+        signaling_prediction_count = getattr(rollout_planner, "signaling_prediction_count", 0)
+        signaling_invalid_prediction_count = getattr(rollout_planner, "signaling_invalid_prediction_count", 0)
+        signaling_invalid_prediction_rate = None
+        if signaling_prediction_count > 0:
+            signaling_invalid_prediction_rate = signaling_invalid_prediction_count / signaling_prediction_count
+        metrics.update(
+            {
+                "signaling_model_type": "kernel_knn",
+                "signaling_model_path": model_path,
+                "signaling_k": k,
+                "signaling_sigma": sigma,
+                "signaling_prediction_count": signaling_prediction_count,
+                "signaling_invalid_prediction_count": signaling_invalid_prediction_count,
+                "signaling_invalid_prediction_rate": signaling_invalid_prediction_rate,
+            }
+        )
 
     return {
         "snapshots": snapshots,
