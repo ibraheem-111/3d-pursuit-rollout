@@ -15,7 +15,9 @@ RESCUE_STRATEGIES = (
     "greedy",
     "non_autonomous_rollout",
     "autonomous_greedy_signaling",
+    "autonomous_learned_signaling",
 )
+DEFAULT_RESCUE_STRATEGIES = RESCUE_STRATEGIES[:3]
 
 
 @dataclass(frozen=True)
@@ -419,6 +421,31 @@ def autonomous_greedy_signaling_action(
     oracle: ShortestPathOracle,
 ) -> Tuple[NodeId, ...]:
     base_action = greedy_joint_action(problem, state, oracle)
+    return autonomous_signaling_action(problem, state, oracle, base_action)
+
+
+def autonomous_learned_signaling_action(
+    problem: GraphSearchProblem,
+    state: RescueState,
+    oracle: ShortestPathOracle,
+    signaling_policy,
+) -> Tuple[NodeId, ...]:
+    fallback_action = greedy_joint_action(problem, state, oracle)
+    base_action = signaling_policy.predict_joint_action(
+        problem,
+        state,
+        oracle,
+        fallback_action=fallback_action,
+    )
+    return autonomous_signaling_action(problem, state, oracle, base_action)
+
+
+def autonomous_signaling_action(
+    problem: GraphSearchProblem,
+    state: RescueState,
+    oracle: ShortestPathOracle,
+    base_action: Sequence[NodeId],
+) -> Tuple[NodeId, ...]:
     actions = []
     for agent_idx, agent_node in enumerate(state.agent_nodes):
         best_move = base_action[agent_idx]
@@ -444,20 +471,32 @@ def _target_distance(problem: GraphSearchProblem, state: RescueState, node: Node
     return min(oracle.distance(node, target) for target in targets)
 
 
-def select_action(problem: GraphSearchProblem, state: RescueState, strategy: str, oracle: ShortestPathOracle):
+def select_action(
+    problem: GraphSearchProblem,
+    state: RescueState,
+    strategy: str,
+    oracle: ShortestPathOracle,
+    signaling_policy=None,
+):
     if strategy == "greedy":
         return greedy_joint_action(problem, state, oracle)
     if strategy == "non_autonomous_rollout":
         return non_autonomous_rollout_action(problem, state, oracle)
     if strategy == "autonomous_greedy_signaling":
         return autonomous_greedy_signaling_action(problem, state, oracle)
+    if strategy == "autonomous_learned_signaling":
+        if signaling_policy is None:
+            raise ValueError(_missing_rescue_signaling_model_message())
+        return autonomous_learned_signaling_action(problem, state, oracle, signaling_policy)
     raise ValueError(f"unknown rescue strategy: {strategy}")
 
 
-def run_rescue_simulation(problem: GraphSearchProblem, strategy: str) -> RescueResult:
+def run_rescue_simulation(problem: GraphSearchProblem, strategy: str, signaling_policy=None) -> RescueResult:
     strategy = strategy.strip().lower().replace("-", "_")
     if strategy not in RESCUE_STRATEGIES:
         raise ValueError(f"unknown rescue strategy: {strategy}")
+    if strategy == "autonomous_learned_signaling" and signaling_policy is None:
+        raise ValueError(_missing_rescue_signaling_model_message())
 
     started_at = time.perf_counter()
     oracle = ShortestPathOracle(problem.adjacency)
@@ -466,12 +505,14 @@ def run_rescue_simulation(problem: GraphSearchProblem, strategy: str) -> RescueR
     total_cost = 0.0
     discounted_cost = 0.0
     discount = 1.0
+    signaling_prediction_count_before = getattr(signaling_policy, "prediction_count", 0)
+    signaling_invalid_count_before = getattr(signaling_policy, "invalid_prediction_count", 0)
 
     while not is_terminal(problem, state) and state.step_idx < problem.max_time_steps:
         cost = stage_cost(problem, state)
         total_cost += cost
         discounted_cost += discount * cost
-        action = select_action(problem, state, strategy, oracle)
+        action = select_action(problem, state, strategy, oracle, signaling_policy=signaling_policy)
         state = transition(problem, state, action)
         trajectory.append(_trajectory_row(problem, state))
         discount *= problem.discount_factor
@@ -499,12 +540,47 @@ def run_rescue_simulation(problem: GraphSearchProblem, strategy: str) -> RescueR
         metrics["grid_width"] = problem.grid_width
     if problem.grid_height is not None:
         metrics["grid_height"] = problem.grid_height
+    if strategy == "autonomous_learned_signaling":
+        signaling_prediction_count = (
+            getattr(signaling_policy, "prediction_count", 0) - signaling_prediction_count_before
+        )
+        signaling_invalid_prediction_count = (
+            getattr(signaling_policy, "invalid_prediction_count", 0) - signaling_invalid_count_before
+        )
+        metrics.update(
+            {
+                "signaling_model_type": getattr(signaling_policy, "model_type", None),
+                "signaling_model_path": getattr(signaling_policy, "model_path", None),
+                "signaling_prediction_count": signaling_prediction_count,
+                "signaling_invalid_prediction_count": signaling_invalid_prediction_count,
+                "signaling_invalid_prediction_rate": (
+                    signaling_invalid_prediction_count / signaling_prediction_count
+                    if signaling_prediction_count > 0
+                    else 0.0
+                ),
+            }
+        )
 
     return RescueResult(strategy=strategy, metrics=metrics, trajectory=trajectory)
 
 
-def run_all_strategies(problem: GraphSearchProblem, strategies: Sequence[str] = RESCUE_STRATEGIES):
-    return [run_rescue_simulation(problem, strategy) for strategy in strategies]
+def run_all_strategies(
+    problem: GraphSearchProblem,
+    strategies: Sequence[str] = DEFAULT_RESCUE_STRATEGIES,
+    signaling_policy=None,
+):
+    return [run_rescue_simulation(problem, strategy, signaling_policy=signaling_policy) for strategy in strategies]
+
+
+def _missing_rescue_signaling_model_message() -> str:
+    return (
+        "autonomous_learned_signaling requires a trained rescue signaling model. "
+        "Collect data with: uv run python scripts/collect_rescue_signaling_data.py "
+        "--config rescue_config.yaml --output models/rescue_signaling_dataset.npz --episodes 50. "
+        "Train a model with: uv run python scripts/train_rescue_signaling_model.py "
+        "--dataset models/rescue_signaling_dataset.npz --output models/rescue_signaling_kernel.npz "
+        "--model-type kernel_knn. Then pass --signaling-model models/rescue_signaling_kernel.npz."
+    )
 
 
 def _trajectory_row(problem: GraphSearchProblem, state: RescueState) -> Dict[str, object]:

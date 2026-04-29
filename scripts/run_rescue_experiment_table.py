@@ -16,13 +16,20 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.collect_rescue_data import make_sampled_problem
-from src.rescue.testbed import RESCUE_STRATEGIES, load_problem_from_config, run_rescue_simulation
+from src.rescue.signaling import RescueLearnedSignalingPolicy
+from src.rescue.testbed import (
+    DEFAULT_RESCUE_STRATEGIES,
+    RESCUE_STRATEGIES,
+    load_problem_from_config,
+    run_rescue_simulation,
+)
 
 
 METHOD_LABELS = {
     "greedy": "Greedy closest-unexplored",
     "non_autonomous_rollout": "Non-autonomous rollout",
     "autonomous_greedy_signaling": "Autonomous rollout + greedy signaling",
+    "autonomous_learned_signaling": "Autonomous rollout + learned signaling",
 }
 
 
@@ -37,8 +44,15 @@ def parse_args():
         "--strategies",
         nargs="+",
         choices=RESCUE_STRATEGIES,
-        default=list(RESCUE_STRATEGIES),
+        default=list(DEFAULT_RESCUE_STRATEGIES),
         help="Strategies to evaluate.",
+    )
+    parser.add_argument("--signaling-model", type=str, default=None, help="Path to rescue learned-signaling model.")
+    parser.add_argument(
+        "--signaling-model-type",
+        choices=["kernel_knn", "mlp"],
+        default=None,
+        help="Expected rescue learned-signaling model type.",
     )
     parser.add_argument(
         "--output-dir",
@@ -95,8 +109,8 @@ def sampled_problems(base_problem, args):
     ]
 
 
-def run_one(problem, strategy, run_idx):
-    result = run_rescue_simulation(problem, strategy)
+def run_one(problem, strategy, run_idx, signaling_policy=None):
+    result = run_rescue_simulation(problem, strategy, signaling_policy=signaling_policy)
     row = dict(result.metrics)
     row.update(
         {
@@ -164,7 +178,16 @@ def markdown_table(df):
     return "\n".join(lines) + "\n"
 
 
-def write_outputs(output_dir, config_path, config, raw_df, summary_df, args):
+def write_outputs(
+    output_dir,
+    config_path,
+    config,
+    raw_df,
+    summary_df,
+    args,
+    signaling_model_path=None,
+    signaling_model_type=None,
+):
     shutil.copy2(config_path, output_dir / "config.yaml")
     raw_df.to_csv(output_dir / "raw_metrics.csv", index=False)
     summary_df.to_csv(output_dir / "summary_table.csv", index=False)
@@ -189,6 +212,8 @@ def write_outputs(output_dir, config_path, config, raw_df, summary_df, args):
                 "simulation": rescue_config["simulation"],
                 "num_agents": len(rescue_config["agents"]["starting_nodes"]),
                 "num_lost_individuals": len(rescue_config["lost_individuals"]["nodes"]),
+                "signaling_model": str(signaling_model_path) if signaling_model_path is not None else None,
+                "signaling_model_type": signaling_model_type,
             },
             f,
             indent=2,
@@ -199,6 +224,38 @@ def write_outputs(output_dir, config_path, config, raw_df, summary_df, args):
     print(f"\nWrote rescue experiment outputs to {output_dir}")
 
 
+def configured_signaling_model(args, config):
+    rescue_config = config.get("rescue", config)
+    signaling_config = rescue_config.get("signaling", {})
+    model_path = args.signaling_model or signaling_config.get("model_path")
+    model_type = args.signaling_model_type or signaling_config.get("model_type")
+    return model_path, model_type
+
+
+def load_signaling_policy_if_needed(args, config):
+    if "autonomous_learned_signaling" not in args.strategies:
+        return None, None, None
+
+    model_path, model_type = configured_signaling_model(args, config)
+    if model_path is None or not Path(model_path).exists():
+        raise ValueError(_missing_signaling_model_message())
+    policy = RescueLearnedSignalingPolicy.load(model_path, model_type=model_type)
+    return policy, model_path, policy.model_type
+
+
+def _missing_signaling_model_message():
+    return (
+        "autonomous_learned_signaling requires a trained rescue signaling model.\n"
+        "Collect data:\n"
+        "  uv run python scripts/collect_rescue_signaling_data.py --config rescue_config.yaml "
+        "--output models/rescue_signaling_dataset.npz --episodes 50\n"
+        "Train a model:\n"
+        "  uv run python scripts/train_rescue_signaling_model.py --dataset models/rescue_signaling_dataset.npz "
+        "--output models/rescue_signaling_kernel.npz --model-type kernel_knn\n"
+        "Then rerun with --signaling-model models/rescue_signaling_kernel.npz"
+    )
+
+
 def main():
     args = parse_args()
     config_path = Path(args.config)
@@ -206,11 +263,12 @@ def main():
     base_problem = load_problem_from_config(config)
     output_dir = make_output_dir(args.output_dir)
     problems = sampled_problems(base_problem, args)
+    signaling_policy, signaling_model_path, signaling_model_type = load_signaling_policy_if_needed(args, config)
 
     raw_rows = []
     for strategy in args.strategies:
         for run_idx, problem in enumerate(problems):
-            metrics = run_one(problem, strategy, run_idx)
+            metrics = run_one(problem, strategy, run_idx, signaling_policy=signaling_policy)
             raw_rows.append(metrics)
             print(
                 f"{METHOD_LABELS[strategy]} run={run_idx + 1}/{args.runs} "
@@ -219,7 +277,16 @@ def main():
 
     raw_df = pd.DataFrame(raw_rows)
     summary_df = summarize(raw_df, args.strategies, args.find_time_policy)
-    write_outputs(output_dir, config_path, config, raw_df, summary_df, args)
+    write_outputs(
+        output_dir,
+        config_path,
+        config,
+        raw_df,
+        summary_df,
+        args,
+        signaling_model_path=signaling_model_path,
+        signaling_model_type=signaling_model_type,
+    )
 
 
 if __name__ == "__main__":

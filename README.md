@@ -124,11 +124,13 @@ Q_rollout(s_t, u_t) =
 
 So revisiting explored nodes is discouraged during rollout planning without changing the metric used to compare final search performance.
 
-Run every implemented rescue strategy:
+Run the baseline rescue strategies:
 
 ```bash
 uv run python scripts/run_rescue_testbed.py --config rescue_config.yaml --strategy all
 ```
+
+`--strategy all` intentionally runs the three baseline strategies only. Learned signaling is explicit because it requires a trained model.
 
 Save static trajectory plots and animations:
 
@@ -151,6 +153,92 @@ uv run python scripts/collect_rescue_data.py \
   --strategy all
 ```
 
+### Learned signaling for graph rescue
+
+Learned signaling for the rescue graph imitates `non_autonomous_rollout` offline. The collected expert label for each state is the action that the non-autonomous rollout expert chose for one focused rescue agent. During `autonomous_learned_signaling`, each agent uses the trained model to predict what the other agents will do, then evaluates its own candidate moves with those learned predictions fixed.
+
+The learned features are observable graph-search information only: focused-agent-first agent geometry, explored-node mask, valid-action mask, and known-target mask only when `lost_individuals.knowledge: "known"`. For `knowledge: "unknown"`, hidden lost-person locations are not included in the model features.
+
+The supported rescue learned-signaling backends are:
+
+```text
+kernel_knn  # weighted kNN with Manhattan/exponential kernel
+mlp         # small pure-NumPy neural classifier
+```
+
+The rescue action labels are:
+
+```text
+stay
+east
+west
+north
+south
+```
+
+If a learned prediction is not legal in the sparse graph, the policy tries the next-best predicted legal action and then falls back to greedy signaling.
+
+Collect expert signaling data:
+
+```bash
+uv run python scripts/collect_rescue_signaling_data.py \
+  --config rescue_config.yaml \
+  --output models/rescue_signaling_dataset.npz \
+  --episodes 50 \
+  --seed 0
+```
+
+Train the kernel kNN signaling model:
+
+```bash
+uv run python scripts/train_rescue_signaling_model.py \
+  --config rescue_config.yaml \
+  --dataset models/rescue_signaling_dataset.npz \
+  --output models/rescue_signaling_kernel.npz \
+  --model-type kernel_knn
+```
+
+Train the MLP signaling model:
+
+```bash
+uv run python scripts/train_rescue_signaling_model.py \
+  --config rescue_config.yaml \
+  --dataset models/rescue_signaling_dataset.npz \
+  --output models/rescue_signaling_mlp.npz \
+  --model-type mlp
+```
+
+Run a single learned-signaling evaluation with the kernel model:
+
+```bash
+uv run python scripts/run_rescue_testbed.py \
+  --config rescue_config.yaml \
+  --strategy autonomous_learned_signaling \
+  --signaling-model models/rescue_signaling_kernel.npz
+```
+
+Run a single learned-signaling evaluation with the MLP model:
+
+```bash
+uv run python scripts/run_rescue_testbed.py \
+  --config rescue_config.yaml \
+  --strategy autonomous_learned_signaling \
+  --signaling-model models/rescue_signaling_mlp.npz \
+  --signaling-model-type mlp
+```
+
+Collect batch metrics for learned signaling:
+
+```bash
+uv run python scripts/collect_rescue_data.py \
+  --config rescue_config.yaml \
+  --output outputs/rescue_learned_metrics.csv \
+  --episodes 50 \
+  --seed 0 \
+  --strategy autonomous_learned_signaling \
+  --signaling-model models/rescue_signaling_kernel.npz
+```
+
 Create final-table rescue experiment outputs:
 
 ```bash
@@ -160,12 +248,38 @@ uv run python scripts/run_rescue_experiment_table.py \
   --base-seed 0
 ```
 
+Include learned signaling in the rescue table after training a model:
+
+```bash
+uv run python scripts/run_rescue_experiment_table.py \
+  --config rescue_config.yaml \
+  --runs 50 \
+  --base-seed 0 \
+  --strategies greedy non_autonomous_rollout autonomous_greedy_signaling autonomous_learned_signaling \
+  --signaling-model models/rescue_signaling_kernel.npz
+```
+
+To produce the same table with the MLP model, switch the model path and type:
+
+```bash
+uv run python scripts/run_rescue_experiment_table.py \
+  --config rescue_config.yaml \
+  --runs 50 \
+  --base-seed 0 \
+  --strategies greedy non_autonomous_rollout autonomous_greedy_signaling autonomous_learned_signaling \
+  --signaling-model models/rescue_signaling_mlp.npz \
+  --signaling-model-type mlp
+```
+
+The experiment-table runner writes `raw_metrics.csv`, `summary_table.csv`, `summary_table.md`, `summary_table.tex`, `metadata.json`, and the copied `config.yaml` under `outputs/rescue_experiments/<timestamp>/`.
+
 Available rescue strategies:
 
 ```text
 greedy
 non_autonomous_rollout
 autonomous_greedy_signaling
+autonomous_learned_signaling
 ```
 
 For `lost_individuals.knowledge: "unknown"`, greedy moves each agent toward the closest unexplored node, with same-step target reservations to reduce duplicate coverage.

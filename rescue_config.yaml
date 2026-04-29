@@ -23,3 +23,12 @@ rescue:
     time_steps: 160
     discount_factor: 0.99
     revisit_penalty: 0.35
+  signaling:
+    model_type: "kernel_knn"
+    model_path: "models/rescue_signaling_kernel.npz"
+    k: 25
+    sigma: 5.0
+    hidden_layers: [32]
+    learning_rate: 0.05
+    epochs: 500
+    seed: 0

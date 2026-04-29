@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.rescue import load_problem_from_config, run_all_strategies, run_rescue_simulation
+from src.rescue.signaling import RescueLearnedSignalingPolicy
 from src.rescue.testbed import RESCUE_STRATEGIES
 from src.rescue.visualization import plot_rescue_trajectory, save_rescue_gif
 
@@ -26,9 +27,16 @@ def parse_args():
         "--strategy",
         choices=["all", *RESCUE_STRATEGIES],
         default="all",
-        help="Strategy to run. Use all to compare every implemented strategy.",
+        help="Strategy to run. Use all to compare baseline strategies.",
     )
     parser.add_argument("--output-dir", type=str, default=None, help="Optional output directory.")
+    parser.add_argument("--signaling-model", type=str, default=None, help="Path to rescue learned-signaling model.")
+    parser.add_argument(
+        "--signaling-model-type",
+        choices=["kernel_knn", "mlp"],
+        default=None,
+        help="Expected rescue learned-signaling model type.",
+    )
     parser.add_argument("--plot", action="store_true", help="Save a trajectory PNG for each strategy.")
     parser.add_argument("--save-gif", action="store_true", help="Save an animated GIF for each strategy.")
     parser.add_argument(
@@ -54,6 +62,32 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
+def load_signaling_policy(args, config):
+    if args.strategy != "autonomous_learned_signaling":
+        return None
+
+    rescue_config = config.get("rescue", config)
+    signaling_config = rescue_config.get("signaling", {})
+    model_path = args.signaling_model or signaling_config.get("model_path")
+    model_type = args.signaling_model_type or signaling_config.get("model_type")
+    if model_path is None or not Path(model_path).exists():
+        raise ValueError(_missing_signaling_model_message())
+    return RescueLearnedSignalingPolicy.load(model_path, model_type=model_type)
+
+
+def _missing_signaling_model_message():
+    return (
+        "autonomous_learned_signaling requires a trained rescue signaling model.\n"
+        "Collect data:\n"
+        "  uv run python scripts/collect_rescue_signaling_data.py --config rescue_config.yaml "
+        "--output models/rescue_signaling_dataset.npz --episodes 50\n"
+        "Train a model:\n"
+        "  uv run python scripts/train_rescue_signaling_model.py --dataset models/rescue_signaling_dataset.npz "
+        "--output models/rescue_signaling_kernel.npz --model-type kernel_knn\n"
+        "Then rerun with --signaling-model models/rescue_signaling_kernel.npz"
+    )
+
+
 def write_metrics_csv(path, results):
     rows = [result.metrics for result in results]
     fieldnames = sorted({key for row in rows for key in row})
@@ -67,11 +101,12 @@ def main():
     args = parse_args()
     config = load_config(args.config)
     problem = load_problem_from_config(config)
+    signaling_policy = load_signaling_policy(args, config)
 
     if args.strategy == "all":
         results = run_all_strategies(problem)
     else:
-        results = [run_rescue_simulation(problem, args.strategy)]
+        results = [run_rescue_simulation(problem, args.strategy, signaling_policy=signaling_policy)]
 
     output_dir = create_output_dir(args.output_dir)
     shutil.copy2(args.config, output_dir / "config.yaml")

@@ -23,6 +23,7 @@ from src.rescue.testbed import (
     run_all_strategies,
     run_rescue_simulation,
 )
+from src.rescue.signaling import RescueLearnedSignalingPolicy
 
 
 def parse_args():
@@ -36,6 +37,13 @@ def parse_args():
         choices=["all", *RESCUE_STRATEGIES],
         default="all",
         help="Strategy to run for each sampled scenario.",
+    )
+    parser.add_argument("--signaling-model", type=str, default=None, help="Path to rescue learned-signaling model.")
+    parser.add_argument(
+        "--signaling-model-type",
+        choices=["kernel_knn", "mlp"],
+        default=None,
+        help="Expected rescue learned-signaling model type.",
     )
     parser.add_argument(
         "--sample-lost",
@@ -100,10 +108,29 @@ def _sample_unique_nodes(rng, all_nodes, count, excluded):
     return tuple(int(node) for node in chosen)
 
 
-def run_strategies(problem, strategy):
+def run_strategies(problem, strategy, signaling_policy=None):
     if strategy == "all":
         return run_all_strategies(problem)
-    return [run_rescue_simulation(problem, strategy)]
+    return [run_rescue_simulation(problem, strategy, signaling_policy=signaling_policy)]
+
+
+def load_signaling_policy(args, config):
+    if args.strategy != "autonomous_learned_signaling":
+        return None
+    rescue_config = config.get("rescue", config)
+    signaling_config = rescue_config.get("signaling", {})
+    model_path = args.signaling_model or signaling_config.get("model_path")
+    model_type = args.signaling_model_type or signaling_config.get("model_type")
+    if model_path is None or not Path(model_path).exists():
+        raise ValueError(
+            "autonomous_learned_signaling requires --signaling-model. "
+            "Build one with: uv run python scripts/collect_rescue_signaling_data.py "
+            "--config rescue_config.yaml --output models/rescue_signaling_dataset.npz --episodes 50 && "
+            "uv run python scripts/train_rescue_signaling_model.py "
+            "--dataset models/rescue_signaling_dataset.npz --output models/rescue_signaling_kernel.npz "
+            "--model-type kernel_knn"
+        )
+    return RescueLearnedSignalingPolicy.load(model_path, model_type=model_type)
 
 
 def metric_rows_for_episode(episode_idx, problem, results):
@@ -143,6 +170,7 @@ def main():
     config = load_config(args.config)
     base_problem = load_problem_from_config(config)
     rng = np.random.default_rng(args.seed)
+    signaling_policy = load_signaling_policy(args, config)
 
     metric_rows = []
     trajectory_rows = []
@@ -153,7 +181,7 @@ def main():
             sample_lost=args.sample_lost,
             sample_agents=args.sample_agents,
         )
-        results = run_strategies(problem, args.strategy)
+        results = run_strategies(problem, args.strategy, signaling_policy=signaling_policy)
         metric_rows.extend(metric_rows_for_episode(episode_idx, problem, results))
 
         if args.save_trajectories:
